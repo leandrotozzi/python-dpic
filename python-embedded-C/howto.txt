@@ -1,0 +1,25 @@
+Execute an arbitrary string -> PyRun_SimpleString()
+    * Simplest method to embbed python code.
+    * This function sends a single line of code to the interpreter.
+    * Because the interpreter is persistent, it's like typing the individual
+      lines in an interactive Python session.
+
+Integrating with objects
+    * PyObject_GetAttrString() function gets an objects
+      attribute by name by accessing the appropriate attribute table.
+
+Call an object
+    1. Import the module that contains the function. (Remember the loaded module object.)
+    2. Get the reference to the function by accessing the attribute of the module.
+    3. Build the Python variable that you'll supply to the function.
+    4. Call the function.
+    5. Convert the returned Python object back into a C variable.
+    Note: Remember to set PYTHONPATH and add the current work directory
+          export PYTHONPATH=$PYTHONPATH:/home/leat/dpic/trials
+
+Working with Python classes
+    Free up Python objects that you've created but no longer need:
+        You don't have to free the objects directly: Instead, you tell Python
+        through the Py_DECREF function to decrement the reference count for the object. In
+        Python (and other languages), when the reference count to a variable reaches zero,
+        the object is automatically deleted as part of the garbage-collection process.
