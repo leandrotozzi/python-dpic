@@ -1,0 +1,7 @@
+SV DPIC
+---------------------
+    * You can call many functions in the C math library directly,
+      without a C wrapper
+      import "DPI-C" function real sin(input real r);
+    * The chandle data type allows you to store a C or C++ pointer in your 
+      SystemVerilog code. 
