@@ -1,0 +1,4 @@
+INCA_libs
+*.o
+*.log
+*.so
