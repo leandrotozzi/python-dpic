@@ -8,6 +8,7 @@ var STEPS = [
   ["06_golden_model_c", "Golden model in C"], ["07_embedding_python", "Embedding Python"], ["08_python_golden_model", "Python golden model"]
 ];
 var THEME_KEY = "dpic-theme";
+var REPO = "https://github.com/leandrotozzi/python-dpic";
 
 function theme() {
   var r = document.documentElement, n = r.dataset.theme === "light" ? "dark" : "light";
@@ -37,8 +38,22 @@ document.addEventListener("DOMContentLoaded", function () {
   var nq = document.querySelectorAll(".quiz").length;
   bar.innerHTML = '<a class="logo" href="' + base + 'index.html" title="Tutorial index">DPI-C</a><nav class="map">' + map + "</nav>" +
     (nq ? '<span class="score" id="gscore">0 / ' + nq + " quiz</span>" : "") +
+    '<a class="gh" href="' + REPO + '" title="Source on GitHub">GitHub</a>' +
     '<button type="button" onclick="theme()" aria-label="Toggle light/dark theme">◐</button><div class="prog" id="gprog"></div>';
   document.body.insertBefore(bar, document.body.firstChild);
+
+  /* on GitHub Pages, links to source files (.sv, .c, .py, .md, folders) open on GitHub instead of downloading */
+  if (/\.github\.io$/.test(location.hostname)) {
+    var root = new URL(base || "./", location.href).pathname;
+    document.querySelectorAll("a[href]").forEach(function (a) {
+      var h = a.getAttribute("href");
+      if (/^[a-z]+:|^#|\.html(#|$)/i.test(h)) return;
+      var p = new URL(h, location.href).pathname;
+      if (p.indexOf(root) !== 0) return;
+      p = p.slice(root.length).replace(/\/$/, "");
+      a.href = REPO + (/\.[a-z0-9]+$/i.test(p) ? "/blob/" : "/tree/") + "master/tutorial/" + p;
+    });
+  }
   var prog = document.getElementById("gprog");
   addEventListener("scroll", function () {
     var h = document.documentElement, f = h.scrollTop / Math.max(1, h.scrollHeight - h.clientHeight);

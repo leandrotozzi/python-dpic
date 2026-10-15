@@ -1,6 +1,6 @@
 # Authoring spec for the tutorial steps
 
-Rules every step (`tutorial/NN_*/`) follows. Read `README.md` (syllabus) first.
+Rules every step (`tutorial/NN_*/`) follows. Read `index.html` (syllabus) first.
 
 ## Language and audience
 - **Everything in English**: code, comments, guide, logs, markdown.

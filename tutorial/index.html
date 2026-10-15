@@ -32,7 +32,12 @@
 .facts div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
 .facts b{display:block;font:600 22px var(--font-display);font-variation-settings:"SOFT" 100;color:var(--acc)}
 .facts span{font:500 12.5px var(--font-mono);color:var(--muted)}
-.how{margin-top:64px}
+.cta{display:flex;flex-wrap:wrap;gap:12px;margin:8px 0 0}
+.cta a{font:500 15px var(--font-mono);padding:9px 18px;border-radius:10px;border:1px solid var(--line-2);color:var(--ink);text-decoration:none}
+.cta a.go{background:var(--acc);border-color:var(--acc);color:var(--on-acc)}
+.cta a:hover{border-color:var(--acc)}
+.home h2{margin-top:64px}
+.home .part h2{margin:0}
 </style>
 </head>
 <body>
@@ -41,12 +46,29 @@
 <p class="kicker">python-dpic · tutorial</p>
 <h1>DPI-C from scratch, then Python as a golden model</h1>
 <p class="deck">An incremental tutorial on the SystemVerilog Direct Programming Interface, measured on Verilator 5.052, ending with Python functions called as bit-exact reference models from a SystemVerilog testbench.</p>
+<div class="cta"><a class="go" href="01_first_call/guide.html">Start with step 01 →</a><a href="#start">Run the labs</a><a href="https://github.com/leandrotozzi/python-dpic">Source on GitHub</a></div>
 <div class="facts">
   <div><b>8</b><span>steps, ≈ 2 h each</span></div>
   <div><b>458</b><span>lab checks, all passing</span></div>
   <div><b>52</b><span>measured Verilator gaps</span></div>
   <div><b>15</b><span>book errata fixed</span></div>
 </div>
+
+<h2 id="start">Get started</h2>
+<p>Each step is a guide plus a lab. The guide reads in the browser (this site, or <code>tutorial/index.html</code> from a clone, offline). The lab is a folder of small SystemVerilog + C/Python testbenches that Verilator builds and runs; <code>check.py</code> asserts every number the guide quotes.</p>
+<div class="tbl"><table>
+<tr><th>You need</th><th>For</th><th>Measured with</th></tr>
+<tr><td>Verilator 5.x</td><td>every lab (<code>--binary --timing</code>)</td><td>5.052</td></tr>
+<tr><td>A C/C++ compiler</td><td>every lab</td><td>Apple clang, macOS x86_64</td></tr>
+<tr><td>Python 3 with <code>python3-config</code></td><td><code>check.py</code>; embedding in steps 07–08</td><td>3.14</td></tr>
+<tr><td>numpy</td><td>step 08 (FIR golden model)</td><td>2.x</td></tr>
+<tr><td>ccache (optional)</td><td>faster rebuilds</td><td></td></tr>
+</table></div>
+<pre><code class="language-bash">git clone https://github.com/leandrotozzi/python-dpic.git
+cd python-dpic/tutorial/01_first_call/lab
+python3 check.py        <span class="c"># builds every testbench in build/, runs them, asserts the results</span></code></pre>
+<p>Every guide has the same layout: text → worked examples → exercises with hidden solutions → self-graded quiz → lab walkthrough → cheat sheet. Try an exercise before opening its solution; the files it refers to are in the step's <code>lab/</code> (<code>lab/ex/</code> for exercises). The index on the left of each guide ticks off sections as you read; the cards below show that progress.</p>
+<p>Everything was measured on macOS. Linux runs the same commands; the few macOS-only details are flagged on the <a href="verilator_gaps.html">Verilator gaps</a> page. Commercial simulators (Questa, VCS, Xcelium) follow the same IEEE 1800 Annex H rules; where they differ from Verilator the guides say so.</p>
 
 <div class="part"><h2>Part A · DPI-C</h2><span>Spear &amp; Tumbush ch. 12</span></div>
 <div class="cards">
@@ -65,11 +87,20 @@
   <a class="card gaps" href="verilator_gaps.html"><div class="top"><span class="num">!</span><span class="pct"></span></div><h3>What doesn't work in Verilator</h3><p>52 measured gaps in one place, silent wrong results first, each with its workaround and the lab that proves it.</p><div class="bar"><b></b></div></a>
 </div>
 
-<div class="how">
-<h2>How to use it</h2>
-<p>Read a step, try the exercises before opening the solutions, take the quiz, then run its lab: <code>cd tutorial/01_first_call/lab &amp;&amp; python3 check.py</code>. Every number in a guide is asserted there. The index on the left of each guide ticks off sections as you read them; this page shows that progress.</p>
-<p>Syllabus, toolchain and references: <a href="README.md">README.md</a> · raw notes: <a href="NOTES.md">NOTES.md</a>.</p>
-</div>
+<p style="margin-top:28px">Steps 06 and 08 share two DUTs: <a href="common/rtl/crc32_stream.sv"><code>crc32_stream.sv</code></a> (CRC-32/IEEE, bit-exact with <code>zlib.crc32</code>) and <a href="common/rtl/fir8.sv"><code>fir8.sv</code></a> (8-tap Q1.15 FIR, round half-up, saturating). Raw measurements behind every guide: <a href="NOTES.md">NOTES.md</a>.</p>
+
+<h2 id="references">References</h2>
+<ul>
+<li><b>IEEE Std 1800-2023</b>, clause 35 (DPI), Annex H (DPI C layer), Annex I (<code>svdpi.h</code>). The normative source.</li>
+<li><b>Spear &amp; Tumbush</b>, <i>SystemVerilog for Verification</i>, 3rd ed., Springer 2012, ch. 12 “Interfacing with C/C++”. Steps 01–06 follow it; its errata are on the <a href="verilator_gaps.html">gaps page</a>.</li>
+<li><a href="https://verilator.org/guide/latest/connecting.html">Verilator manual</a>, “Direct Programming Interface (DPI)” and “Connecting to C++”.</li>
+<li>Doulos, <a href="https://www.doulos.com/knowhow/systemverilog/systemverilog-tutorials/systemverilog-dpi-tutorial/">SystemVerilog DPI tutorial</a>.</li>
+<li>AMD UG900, “Open Arrays in DPI” / “Support for svdpi.h functions” (a clear vendor summary of Annex H/I).</li>
+<li>AMIQ, <a href="https://www.consulting.amiq.com/2019/01/30/how-to-call-c-functions-from-systemverilog-using-dpi-c/">How to Call C-functions from SystemVerilog Using DPI-C</a> and <a href="https://www.consulting.amiq.com/?p=5664">How to Connect SystemVerilog with Python</a> (2019).</li>
+<li>Python docs, <a href="https://docs.python.org/3/extending/embedding.html">Embedding Python in Another Application</a> and <a href="https://docs.python.org/3/c-api/init_config.html">Python Initialization Configuration</a> (PEP 587 / PEP 741).</li>
+<li>M. Ballance, <i>Properly Introducing Python to your UVM Testbench</i>, DVCon US 2026 (PyHDL-IF).</li>
+<li>Libraries for later: <a href="https://github.com/Kuree/pysv">pysv</a>, <a href="https://github.com/fvutils/pyhdl-if">PyHDL-IF</a>, <a href="https://www.cocotb.org">cocotb</a>, <a href="https://github.com/pyuvm/pyuvm">pyuvm</a>.</li>
+</ul>
 </main>
 </div>
 <script>

@@ -544,7 +544,7 @@ t(32'hFFFF_FFFF,  32, 32'h0000_0000);   t(32'hFFFF_FFFF, -40, 32'h0000_0000);</c
 <label><input type="radio" value="b"> The C function runs in a separate process and the simulator waits for a reply message.</label>
 <label><input type="radio" value="c"> The simulator's thread executes the C code; no time passes and no other SV process runs until it returns.</label>
 <label><input type="radio" value="d"> It depends on whether the import is <code>pure</code>.</label>
-<div class="why">(c) An import is a plain function call in the same process and thread (Fig. 0.3). (b) describes socket co-simulation (the <code>../sockets_dpi</code> examples in this repo), which you would build on top of DPI. <code>pure</code> only licenses optimizations; it does not change the execution model.</div>
+<div class="why">(c) An import is a plain function call in the same process and thread (Fig. 0.3). (b) describes socket co-simulation (the <code>legacy/sockets_dpi</code> examples in this repo), which you would build on top of DPI. <code>pure</code> only licenses optimizations; it does not change the execution model.</div>
 </div>
 
 <div class="quiz" data-answer="b">

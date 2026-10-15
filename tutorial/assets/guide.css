@@ -70,6 +70,8 @@ li::marker{color:var(--muted)}
 .gbar .map i{width:18px;height:1.5px;background:var(--line-2)}
 .gbar .map .sep{width:1px;height:20px;background:var(--line-2);margin:0 8px}
 .gbar .score{font:500 12.5px var(--font-mono);border-radius:999px;padding:3px 12px;background:var(--fpga-soft);color:var(--ok);white-space:nowrap}
+.gbar .gh{font:500 12.5px var(--font-mono);color:var(--muted);text-decoration:none}
+.gbar .gh:hover{color:var(--acc)}
 .gbar button{width:34px;height:34px;padding:0;display:grid;place-items:center;font-size:17px;border-radius:10px}
 .gbar .prog{position:absolute;left:0;bottom:-1px;height:3px;width:0;background:var(--acc);border-radius:0 3px 3px 0}
 @media (max-width:760px){.gbar{padding:10px 16px;gap:10px}.gbar .map a:not(.cur),.gbar .map i,.gbar .map .sep{display:none}}

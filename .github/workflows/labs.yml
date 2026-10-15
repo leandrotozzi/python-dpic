@@ -1,0 +1,43 @@
+name: labs
+on:
+  push:
+    branches: [master]
+    paths: [tutorial/**, .github/workflows/labs.yml]
+  pull_request:
+    paths: [tutorial/**, .github/workflows/labs.yml]
+  workflow_dispatch:
+env:
+  VERILATOR: v5.052   # the version every guide was measured on
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"   # step 07 uses PEP 741 (new in 3.14)
+      - run: pip install numpy
+      - id: vcache
+        uses: actions/cache@v4
+        with:
+          path: ~/verilator
+          key: verilator-${{ env.VERILATOR }}-${{ runner.os }}-${{ runner.arch }}
+      - name: Build Verilator
+        if: steps.vcache.outputs.cache-hit != 'true'
+        run: |
+          brew install autoconf bison flex help2man
+          export PATH="$(brew --prefix bison)/bin:$(brew --prefix flex)/bin:$PATH"
+          git clone --depth 1 -b $VERILATOR https://github.com/verilator/verilator /tmp/vsrc
+          cd /tmp/vsrc && autoconf && ./configure --prefix=$HOME/verilator && make -j$(sysctl -n hw.ncpu) && make install
+      - run: echo "$HOME/verilator/bin" >> $GITHUB_PATH
+      - name: Run every lab
+        run: |
+          verilator --version
+          for d in tutorial/0*/lab; do echo "::group::$d"; python3 $d/check.py; echo "::endgroup::"; done
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab-logs
+          path: |
+            tutorial/*/lab/build/*.log
+            tutorial/*/lab/build/*.build
