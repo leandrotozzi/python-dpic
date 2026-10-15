@@ -10,29 +10,8 @@
 <script defer src="../assets/katex/katex.min.js"></script>
 <script defer src="../assets/katex/contrib/auto-render.min.js"></script>
 <script defer src="../assets/quiz.js"></script>
-<script>
-try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
-document.addEventListener('DOMContentLoaded',function(){
-  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
-  var toc=document.getElementById('toc');
-  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
-  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
-  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
-  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
-  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
-});
-function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
-function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
-</script>
-<style>
-/* local tweaks: SV and C code */
-pre.sv,pre.cc,pre.sh{font-size:13px;line-height:1.5}
-pre .c{color:var(--muted);font-style:italic}
-pre .k{color:var(--acc);font-weight:600}
-p code,li code,td code{overflow-wrap:anywhere}
-td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
-.steps{display:flex;justify-content:space-between;gap:12px;font-family:var(--font-mono);font-size:12.5px;margin-top:6px}
-</style>
+<script>try{var t=localStorage.getItem('dpic-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<script defer src="../assets/guide.js"></script>
 </head>
 <body>
 <svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
@@ -70,8 +49,6 @@ td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
 </ol></nav></details>
 
 <main>
-<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
-<div class="steps"><span>Step 01 of 08</span><a href="../02_data_types/guide.html">Next: 02 · Data types →</a></div>
 <p class="kicker">DPI-C from scratch · Part A · Step 01</p>
 <h1>The first call: import, link, and what can go wrong</h1>
 <p class="deck">An <code>import "DPI-C"</code> declaration is a promise that a C function with a matching signature will be there at link time. The simulator cannot read C, so nothing checks that promise unless you make the compiler do it. This step makes the first call work, then breaks it on purpose in every way it usually breaks.</p>
@@ -316,7 +293,7 @@ p = addmul(6, 7, s);      <span class="c">// LOG addmul p=42 s=13</span></code><
 <pre class="cc"><code><span class="k">int</span> addmul(<span class="k">int</span> a, <span class="k">int</span> b, <span class="k">int</span>* sum) { *sum = a + b; <span class="k">return</span> a * b; }</code></pre>
 <p>Rules for now, the full table is in <a href="../02_data_types/guide.html">step 02</a>:</p>
 <ul>
-<li><code>input</code>: by value for small types. Mark it <code>const</code> in C if you like (Sample 12.5); the header omits <code>const</code> for scalars because it does not matter to the caller.</li>
+<li><code>input</code>: by value for small types. H.8.7 says input arguments of imported functions "shall always have a <code>const</code> qualifier" in C (Sample 12.5 does it). For by-value scalars it changes nothing at the ABI level, which is why Verilator's header omits it, but write it: it is the standard's rule and the compiler then rejects writes to an input.</li>
 <li><code>output</code>: write it on every path. Its initial value is undefined (Fig. 0.3).</li>
 <li><code>inout</code>: the pointer's target holds the SV value on entry, and whatever C leaves there is copied back.</li>
 <li>Return types are limited to "small values": <code>void</code>, <code>byte</code>, <code>shortint</code>, <code>int</code>, <code>longint</code>, <code>real</code>, <code>shortreal</code>, <code>chandle</code>, <code>string</code>, and scalar <code>bit</code>/<code>logic</code>. A <code>bit [6:0]</code> cannot be returned; use an <code>output</code> (§12.1.4).</li>
@@ -333,6 +310,7 @@ p = addmul(6, 7, s);      <span class="c">// LOG addmul p=42 s=13</span></code><
 package pb; import "DPI-C" function real twice(input real x); endpackage
 %Error: dup.sv:3:42: Duplicate declaration of DPI function with different signature: 'twice'</code></pre>
 <p>SV has no overloading of routines, and C has no overloading of symbols. If you need <code>int</code> and <code>real</code> versions, write two C functions.</p>
+<div class="callout note" style="--c-label:'LRM rule'"><p><b>What "one signature" includes.</b> §35.5.4: every declaration of a given C name (explicit <code>c_name =</code> or implied by the SV name), in any scope, must have exactly the same type signature: return type, number, order, direction and type of every argument including array bounds, the <code>pure</code>/<code>context</code> qualifier, and the <code>"DPI-C"</code>/<code>"DPI"</code> string. Argument <em>names</em> and default values may differ. The lab (<code>cid.sv</code>) imports <code>twice</code> in <code>top</code> and, as <code>dbl(input int y)</code>, in a submodule: legal, <code>LOG cid top=4 u=6</code>. Making the second one <code>context</code> is a different signature: <code>Duplicate declaration of DPI function with different signature: 'twice'</code>. The C names themselves must be valid C identifiers; a name that collides with an SV keyword is written as an escaped identifier and the tool strips the backslash (§35.4), which is exactly Sample 12.3's <code>\expect</code>.</p></div>
 
 <!-- 0.10 -->
 <h3 id="r-libc"><span class="no">0.10</span>Importing libc and libm directly</h3>
@@ -348,7 +326,8 @@ package pb; import "DPI-C" function real twice(input real x); endpackage
 
 <!-- 0.11 -->
 <h3 id="r-pure"><span class="no">0.11</span><code>pure</code></h3>
-<p>IEEE 1800-2023 §35.5.2: a <code>pure</code> function's result depends <b>only on its input arguments</b>, and it has <b>no side effects</b>: no global or static state, no file I/O, no printing, no calls to exported SV routines. In return the simulator may optimize as if it were a mathematical function. It may skip a call whose result is unused, evaluate <code>f(2)+f(2)</code> once, or hoist a call out of a loop. Only functions can be <code>pure</code> (an imported task never is), and output/inout arguments are not allowed in a pure function.</p>
+<p>IEEE 1800-2023 §35.5.2: a <code>pure</code> function's result depends <b>only on its input arguments</b>, and it has <b>no side effects</b>: no global or static state, no file I/O, no printing, no calls to exported SV routines. In return the simulator may optimize as if it were a mathematical function. It may skip a call whose result is unused, evaluate <code>f(2)+f(2)</code> once, or hoist a call out of a loop. §35.5.1.3 and §35.5.2 also restrict who may be <code>pure</code>: only <b>nonvoid functions with no <code>output</code> or <code>inout</code> arguments</b>. A <code>void</code> function has no result to reuse, an output is a side effect, and an imported task can never be <code>pure</code> (the grammar only allows <code>context</code> on tasks).</p>
+<div class="callout trap"><p><b>Verilator does not enforce these three rules.</b> The lab (<code>pure_rules.sv</code>) builds <code>pure function void</code>, <code>pure task</code> and <code>pure function int f(input int a, output int b)</code>: all three compile without an error or warning and run (<code>LOG prule case=out r=3 b=4</code>). A commercial compiler may reject them, or accept them and then drop the call. Do not write them. Listed in <a href="../verilator_gaps.html">What doesn't work in Verilator</a>.</p></div>
 <p>The lab tells a deliberate lie: <code>ping()</code> is imported as <code>pure</code> but counts its calls in a C static.</p>
 <div class="tbl"><table>
 <tr><th>SV code</th><th>calls the LRM allows</th><th>calls in Verilator 5.052</th></tr>
@@ -384,11 +363,13 @@ $$13! \bmod 2^{32} = 6227020800 - 2^{32} = 1932053504$$
 <div class="tbl"><table>
 <tr><th>Simulator</th><th>compile C with the design</th><th>prebuilt shared library</th><th>prototype header</th></tr>
 <tr><td>Questa</td><td class="mono">vlog -sv top.sv dpi.c</td><td class="mono">vsim -sv_lib ./libdpi top</td><td class="mono">vlog -dpiheader dpi.h</td></tr>
-<tr><td>Xcelium</td><td class="mono">xrun top.sv dpi.c</td><td class="mono">xrun -sv_lib libdpi.so</td><td class="mono">xrun -dpiheader dpi.h</td></tr>
+<tr><td>Xcelium</td><td class="mono">xrun top.sv dpi.c</td><td class="mono">xrun -sv_lib libdpi</td><td class="mono">xrun -dpiheader dpi.h</td></tr>
 <tr><td>VCS</td><td class="mono">vcs -sverilog top.sv dpi.c</td><td class="mono">simv -sv_lib libdpi</td><td class="mono">vc_hdrs.h (automatic)</td></tr>
 <tr><td>Verilator</td><td class="mono">verilator --binary top.sv dpi.c</td><td class="mono">dpi.a / -LDFLAGS</td><td class="mono">V&lt;top&gt;__Dpi.h (automatic)</td></tr>
 </table></div>
-<p>Two practical differences: they compile <code>.c</code> files as <b>C</b>, so missing <code>extern "C"</code> only bites with <code>.cpp</code> files there; and with <code>-sv_lib</code> the library is <code>dlopen</code>ed at run time, so the C side can be rebuilt without recompiling the design. The <code>#ifdef __cplusplus</code> pattern in 0.5 makes one source file work everywhere. <code>import "DPI"</code> (no <code>-C</code>, the IEEE 1800-2005 spelling, deprecated since 2009) may still be accepted by commercial tools with a warning. Verilator rejects it: <code>Unsupported DPI type 'DPI': Use 'DPI-C'</code>.</p>
+<p>Two practical differences: they compile <code>.c</code> files as <b>C</b>, so missing <code>extern "C"</code> only bites with <code>.cpp</code> files there; and with <code>-sv_lib</code> the library is <code>dlopen</code>ed at run time, so the C side can be rebuilt without recompiling the design. The <code>#ifdef __cplusplus</code> pattern in 0.5 makes one source file work everywhere.</p>
+<p>The loading switches come from Annex J, which recommends (informatively) the same names for every tool: <code>-sv_lib</code> takes the library path <b>without</b> its extension (<code>-sv_lib lib/dpi</code>; the tool adds <code>.so</code>, <code>.dylib</code> or <code>.dll</code>), <code>-sv_liblist file</code> names a bootstrap file whose first line is <code>#!SV_LIBRARIES</code> followed by one library per line, and <code>-sv_root dir</code> is prepended to relative paths. Bootstrap entries load before <code>-sv_lib</code> switches, in order, and each library loads once (J.3, J.4, J.4.1). Verilator has none of this: it links the C into the executable at build time.</p>
+<p><code>import "DPI"</code> (no <code>-C</code>) is not just an old spelling. It selects the deprecated SV3.1a argument passing for packed types, where C gets opaque <code>svBitPackedArrRef</code> handles instead of canonical <code>svBitVecVal</code> chunks (§35.5.4, H.14), so C written for <code>"DPI-C"</code> would read garbage through it. §35.5.4 requires a compile-time warning or error for it. Verilator's error, <code>Unsupported DPI type 'DPI': Use 'DPI-C'</code>, is the compliant answer; some commercial tools warn and fall back to the old semantics.</p>
 
 <!-- 0.15 -->
 <h3 id="r-debug"><span class="no">0.15</span>Which stage failed? A map of DPI errors</h3>
@@ -685,10 +666,10 @@ t(32'hFFFF_FFFF,  32, 32'h0000_0000);   t(32'hFFFF_FFFF, -40, 32'h0000_0000);</c
 
 <!-- §4 -->
 <h2 id="s4"><span class="no">§4 · Lab</span>Run it, break it, read the messages</h2>
-<p>Everything above comes from <code>tutorial/01_first_call/lab/</code>. One command builds about 20 small experiments in parallel, runs them, and asserts 46 facts:</p>
+<p>Everything above comes from <code>tutorial/01_first_call/lab/</code>. One command builds about 25 small experiments in parallel, runs them, and asserts 53 facts:</p>
 <pre class="sh"><code>$ cd tutorial/01_first_call/lab
 $ python3 check.py          <span class="c"># ~3 s with ccache warm, ~1–2 min cold</span>
-check.py: 46 checks passed
+check.py: 53 checks passed
 $ bash run.sh                <span class="c"># just build + run; logs in build/</span></code></pre>
 <p><b>Before running, predict:</b> (1) what <code>factorial(13)</code> prints; (2) which builds fail and at which stage (Verilator, C++ compile, or link); (3) the value <code>negate</code> returns; (4) the call counts in <code>pure.log</code>. Then compare with the table.</p>
 <div class="tbl"><table>
@@ -707,6 +688,8 @@ $ bash run.sh                <span class="c"># just build + run; logs in build/<
 <tr><td>libc <code>strlen</code> imported directly</td><td class="mono">ex/ex5_strlen.sv</td><td>C++ compile</td><td>clash with <code>size_t strlen</code> from <code>&lt;string.h&gt;</code></td></tr>
 <tr><td>lying <code>pure</code></td><td class="mono">pure.sv/.c</td><td>runs</td><td>calls: unused=1, twice=2, loop4=4 (no elimination)</td></tr>
 <tr><td>import in <code>always_comb</code>/<code>assign</code></td><td class="mono">comb.sv + pure.c</td><td>runs</td><td>2 calls at t=0, then 1 per change per site: 22 total</td></tr>
+<tr><td><code>pure</code> on <code>void</code> / task / with <code>output</code> (illegal)</td><td class="mono">pure_rules.sv/.c</td><td>runs</td><td>all three accepted silently; <code>r=3 b=4</code></td></tr>
+<tr><td>one C name in two scopes</td><td class="mono">cid.sv/.c</td><td>runs / Verilator</td><td><code>top=4 u=6</code>; with <code>context</code> on one: <code>Duplicate declaration … 'twice'</code></td></tr>
 <tr><td><code>ref</code> argument (illegal)</td><td class="mono">ref.sv</td><td>link</td><td>accepted silently as <code>int*</code>; only <code>"_bump"</code> undefined</td></tr>
 <tr><td>imports in a package</td><td class="mono">pkg.sv/.c</td><td>runs</td><td><code>top.c1</code>, <code>top.c2</code>: 720; <code>top</code>: 5040</td></tr>
 </table></div>
@@ -739,7 +722,6 @@ $ bash run.sh                <span class="c"># just build + run; logs in build/<
 <li>Outputs are write-only on entry. Unsigned arithmetic for anything that wraps.</li>
 <li>Keep imports in one package; copy C prototypes from the header, never retype them.</li>
 </ol>
-<div class="steps"><a href="../index.html">← Tutorial index</a><a href="../02_data_types/guide.html">Next: 02 · Data types →</a></div>
 </main>
 </div>
 </body>

@@ -15,7 +15,9 @@ vlb dir      dir.sv dir.c
 vlb counter4 counter4.sv counter4.c
 vlb zlit     zlit.sv types.c                                         # expected: Verilator error (1'bz argument)
 wait
-for t in types types_fix types_uchar vec dir counter4; do vlr $t $t; done
+vlb ver ver.sv ver.c
+wait
+for t in types types_fix types_uchar vec dir counter4 ver; do vlr $t $t; done
 
 # return types and argument prototypes: elaborate only, keep the generated header / the error
 mkdir -p build/proto

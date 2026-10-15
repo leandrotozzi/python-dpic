@@ -87,6 +87,19 @@ ok(kv(read("comb.log"), "comb t=101") == {"calls": "22", "x": "10", "y": "10", "
 ok("extern void bump(int* x);" in (B / "vl_ref/Vtop__Dpi.h").read_text(), "ref accepted, mapped to int*")
 ok('"_bump", referenced from' in read("ref.build") and "%Error: ref.sv" not in read("ref.build"), "ref: no Verilator error")
 
+# 5c) LRM 35.5.2: pure only on nonvoid functions without output/inout; never on tasks.
+#     Verilator 5.052 accepts all three illegal forms silently.
+for n in ("pr_void", "pr_task", "pr_out"):
+    ok("%Error" not in read(f"{n}.build") and "BUILD_FAIL" not in read(f"{n}.build"), f"{n}: accepted, no error")
+ok("LOG prule case=void built=1" in read("pr_void.log") and "LOG prule case=task built=1" in read("pr_task.log"),
+   "pure void function / pure task run")
+ok(kv(read("pr_out.log"), "prule case=out") == {"r": "3", "b": "4"}, "pure with output: runs, output written")
+# 5d) LRM 35.4/35.5.4: one c_identifier in two scopes. Same signature: legal. Different qualifier: error.
+ok(kv(read("cid.log"), "cid") == {"top": "4", "u": "6"}, "same C name, two SV names, two scopes")
+cb = read("cid_bad.build")
+ok("Duplicate declaration of DPI function with different signature: 'twice'" in cb and "BUILD_FAIL" in cb,
+   "context vs non-context on one C name: rejected")
+
 # 6) exercises
 ok("PASS ex1" in read("ex1.log") and "FAIL" not in read("ex1.log"), "Ex. 12.1 shift_c")
 ok(kv(read("ex2.log"), "fact64") == {"f13": "6227020800", "f20": "2432902008176640000", "f21": "-4249290049419214848"}, "ex2")

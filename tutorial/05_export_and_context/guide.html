@@ -10,28 +10,8 @@
 <script defer src="../assets/katex/katex.min.js"></script>
 <script defer src="../assets/katex/contrib/auto-render.min.js"></script>
 <script defer src="../assets/quiz.js"></script>
-<script>
-try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
-document.addEventListener('DOMContentLoaded',function(){
-  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
-  var toc=document.getElementById('toc');
-  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
-  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
-  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
-  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
-  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
-});
-function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
-function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
-</script>
-<style>
-pre.sv,pre.c{font-size:13px;line-height:1.5}
-pre .c{color:var(--muted);font-style:italic}
-pre .k{color:var(--acc);font-weight:600}
-p code,li code,td code{overflow-wrap:anywhere}
-td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
-.nav2{display:flex;justify-content:space-between;gap:12px;font-family:var(--font-mono);font-size:12.5px;margin-top:6px}
-</style>
+<script>try{var t=localStorage.getItem('dpic-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<script defer src="../assets/guide.js"></script>
 </head>
 <body>
 <svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
@@ -68,8 +48,6 @@ td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
 </ol></nav></details>
 
 <main>
-<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
-<div class="nav2"><a href="../04_arrays_structs_strings/guide.html">← 04 Arrays, structs, strings</a><a href="../06_golden_model_c/guide.html">06 Golden model in C →</a></div>
 <p class="kicker">DPI-C tutorial · Part A · Step 05 · Spear &amp; Tumbush §12.7–12.8</p>
 <h1>Export and context: when C calls back into SystemVerilog</h1>
 <p class="deck">Up to now C was a leaf: SV called it, it computed, it returned. This step makes the call go both ways. C calls SV functions and tasks through <code>export "DPI-C"</code>, and it needs to know <em>which</em> SV instance it is talking to. That is what <code>context</code> and the scope API are for. Verilator implements most of this faithfully. One big piece it rejects outright, and one small piece it gets silently wrong.</p>
@@ -147,6 +125,9 @@ LOG sv where=top.sv_display</code></pre>
     <span class="c">// DPI IMPORTS</span>
     extern void c_display();</code></pre>
 <p>What can be exported: functions and tasks declared in a module, interface, program, package or <code>$unit</code>. Class methods cannot be exported (§12.8.4), because no object exists at elaboration time when the C symbol is bound. <a href="#t-objs">0.12</a> shows the workaround. In one scope, one export per C name. The same name exported from several scopes is legal: that is exactly the two-instance case above.</p>
+<div class="callout note" style="--c-label:'LRM rules for exports'"><p>§35.7 and §35.8: the export declaration must sit in the scope that defines the routine, one export per routine per scope, and the argument and result types obey the same restrictions as imports (so no packed-vector results, step 02). Two more rules are export-only: an export can't have an <b>open-array</b> formal (§35.5.6.1, H.8.2; open arrays exist only in import declarations), and a <b>dynamic-array</b> formal on an export is erroneous (§35.5.6). Shared C names across scopes are fine if the signatures match (§35.4): <code>lab/xshared.sv</code> exports <code>hello</code> from two different modules and C picks one with <code>svSetScope</code>: <code>LOG xshared who=top.u1.hello</code>, then <code>who=top.u2.hello</code>.</p></div>
+<div class="callout trap"><p>Verilator 5.052 does not diagnose the dynamic-array formal, it crashes: <code>lab/xdyn.sv</code> (<code>export "DPI-C" function sum_dyn;</code> with <code>input int a[]</code>) stops the build with <code>%Error: Verilator internal fault, sorry.</code> If you see an internal fault after adding an export, check its formals first.</p></div>
+<p><b>Arguments when C calls an export.</b> An export has exactly the C header an import with the same SV signature would have (H.8.2), so the type rules of <a href="../02_data_types/guide.html">step 02</a> apply in reverse: small inputs by value, everything else by pointer. The difference is who allocates: now C is the caller, so C provides the storage for every by-reference argument, in canonical layout (H.8.5). For <code>output bit [39:0] v</code> that is <code>svBitVecVal v[SV_PACKED_DATA_NELEMS(40)];</code> on the C stack; for <code>output int x</code>, an <code>int</code>. For an <code>output string</code> SV writes a pointer into your <code>const char*</code>: the storage belongs to SV, so copy the text if you need it after the next call (H.8.10).</p>
 <div class="callout note" style="--c-label:'In Verilator'"><p>Verilator compiles <code>.c</code> files as C++ (clang warns "treating 'c' input as 'c++'"). The generated header wraps prototypes in <code>extern "C"</code>, so including it is also what keeps C++ name mangling from breaking the link (<a href="../01_first_call/guide.html">step 01</a>). <code>svGetCallerInfo</code> works and returns the path as given on the command line (<code>ex/report.sv:12</code> in one exercise, <code>scopes.sv:9</code> here).</p></div>
 
 <!-- 0.3 -->
@@ -248,10 +229,11 @@ LOG sv hello where=top.o.sv_hello          <span class="c">// WRONG instance, no
 </figure>
 <p class="hv">The rule is mechanical: if the C body (or anything it calls) calls an export, uses VPI, or calls <code>svGetScope</code>, the import is <code>context</code>. A generic import that calls an export "works" in a small test because some earlier context call happened to leave the right scope. In the full testbench it calls the export of whichever instance ran last.</p>
 <p>In run 1 the warning comes from Verilator's runtime when C asks for the scope from a non-context call. In run 2 there is no warning at all. The LRM makes the export call from a non-context import an error, but how loudly a given simulator diagnoses it is tool-dependent. Don't rely on getting a diagnostic.</p>
+<div class="callout note" style="--c-label:'LRM rule: context belongs to each call'"><p>§35.5.3 describes an <b>import call chain</b>: SV calls an import, which may call an export, which may call another import, and so on until control returns to the SV caller. The <code>context</code> property is checked per import call and is <b>not inherited</b> down the chain: a context import → export → generic import → export chain is an error at the second export, even though the chain started with a context call. Inside the chain, <code>svSetScope</code> changes the scope, and when an export returns the chain's scope is restored to its value before the export call. Leaving an export with <code>setjmp</code>/<code>longjmp</code> (or a C++ exception, step 03) skips that bookkeeping and is undefined. The scope functions themselves are undefined outside a context call chain (H.9.3).</p></div>
 
 <!-- 0.7 -->
 <h3 id="t-scope"><span class="no">0.7</span>The scope API (Samples 12.48–12.50)</h3>
-<p>Six functions from <code>svdpi.h</code> (IEEE 1800-2023 Annex I) manage the scope register. All of them require being inside a context call (or after an explicit <code>svSetScope</code>):</p>
+<p>Six functions manage the scope register; their semantics are in H.9.3 (the prototypes are in <code>svdpi.h</code>, Annex I). Their behavior is undefined outside a DPI context call chain (H.9.3, §35.5.3):</p>
 <div class="tbl"><table>
 <thead><tr><th>Function</th><th>Does</th><th>Measured on Verilator</th></tr></thead>
 <tbody>
@@ -315,9 +297,14 @@ LOG bump where=top.b1 n=1
 LOG bump where=top n=4        <span class="c">// top called it 4 times; b1 and b2 once each</span></code></pre>
 <p>Chandle or user data? Use the chandle when SV creates and destroys the C object explicitly: dynamic objects, classes, many models per instance. Use user data when the C state is naturally "one per module instance", such as a memory model or a per-port checker, and you want SV call sites to stay argument-free. Both leak if nobody frees them. Freeing user data at the end of simulation needs a <code>final</code> block that calls a context import.</p>
 
+<div class="callout note" style="--c-label:'Reading simulation time from C (H.13)'"><p>A model that timestamps its log does not need an exported <code>get_time()</code>: <code>svGetTime(scope, &amp;t)</code> fills an <code>svTimeVal</code> (= VPI's <code>s_vpi_time</code>) with simulation time (<code>t.type = vpiSimTime</code>, 64 bits in <code>high</code>/<code>low</code>, in simulation precision units) or scaled real time (<code>vpiScaledRealTime</code>, in the scope's time unit, in <code>t.real</code>). <code>svGetTimeUnit</code> and <code>svGetTimePrecision</code> return powers of ten (−9 = ns); a <code>NULL</code> scope means the global simulation unit. <code>lab/svtime.sv</code> (<code>`timescale 1ns/1ps</code>, plus a submodule with <code>timeunit 1us</code>) measures Verilator 5.052:</p>
+<pre class="out"><code>LOG svtime tag=t25 rc=000 sim=25000 scaled_low=25000 scaled_real=-1 ... unit=-9 prec=-12 gunit=-9
+LOG svtime tag=sub30ns rc=000 sim=30000 scaled_low=30000 scaled_real=-1 ... unit=-9 prec=-12 gunit=-9</code></pre>
+<p>Simulation time is right (25 ns = 25000 ps). The rest deviates: the <code>type</code> field is ignored, so <code>vpiScaledRealTime</code> never writes <code>t.real</code> (still the −1 the C code put there), and the submodule's scope reports unit −9 instead of −6. Use <code>vpiSimTime</code> with <code>svGetTimePrecision(NULL, …)</code> and scale it yourself.</p></div>
+
 <!-- 0.9 -->
 <h3 id="t-tasks"><span class="no">0.9</span>Tasks across the boundary</h3>
-<p>Both directions accept tasks as well as functions: <code>import "DPI-C" context task</code> and <code>export "DPI-C" task</code>. The LRM (Annex H) gives both an <code>int</code> return on the C side. It is not a value but a <b>disable flag</b>. If SV <code>disable</code>s a block while a task call chain is inside C, the exported task returns 1. C must then clean up, call <code>svAckDisabledState()</code> and return 1 from the import task, so the simulator can unwind. <code>svIsDisabledState()</code> tells C whether that is happening.</p>
+<p>Both directions accept tasks as well as functions: <code>import "DPI-C" context task</code> and <code>export "DPI-C" task</code>. The LRM gives both an <code>int</code> return on the C side (§35.8, §35.9, H.8.2). It is not a value but a <b>disable flag</b>. If SV <code>disable</code>s a block while a task call chain is inside C, the exported task returns 1. C must then clean up, call <code>svAckDisabledState()</code> and return 1 from the import task, so the simulator can unwind. <code>svIsDisabledState()</code> tells C whether that is happening. §35.9 adds three rules: once disabled, the import must not call any more exports; the values of its <code>output</code>/<code>inout</code> arguments and its result are undefined; and the simulator shall stop with a fatal error if C breaks the protocol.</p>
 <pre class="c"><code><span class="c">// lab/xtask.c: imported task looping over a zero-time exported task</span>
 int c_task(int n) {                        <span class="c">// import task: returns int (disable ack), 0 = normal</span>
   for (int i = 0; i &lt; n; i++) {
@@ -373,6 +360,7 @@ LOG sv calls=3 t=0</code></pre>
 <figcaption><b>Fig. 0.6</b>Who owns the loop decides who has to block. In the push model C blocks inside SV time, which needs simulator coroutines. In the pull model C is an iterator and every wait happens in an SV process, which every simulator can schedule.</figcaption>
 </figure>
 <div class="callout note" style="--c-label:'In Verilator'"><p>Verilator's <code>--timing</code> implements SV processes as C++20 coroutines, but a DPI call is a plain C call. A C function in the middle of a call chain can't be suspended, so Verilator forbids anything below an export from waiting. Lifting that would need a separate stack per DPI call, which is what commercial simulators pay for. Design new C/SV code so C never needs to wait, and it runs everywhere.</p></div>
+<div class="callout trap" style="--c-label:'Reentrancy (§35.5.1.5)'"><p>On a simulator that does let an exported task wait, the C code of an imported task can be <b>active in several SV threads at the same time</b>: thread A's call is suspended inside an export at <code>@(posedge clk)</code>, thread B calls the same import, and both C frames are live. The LRM tells the C programmer to write reentrant code: locals are per call, but <code>static</code> and global variables are shared by every suspended call, and only thread-safe C library calls may be used (no <code>strtok</code>, no shared static buffers). Four sequences driving one C test program are exactly this case. Verilator never gets there, because nothing below an export may wait, which is one more reason the pull model is the portable design.</p></div>
 
 <!-- 0.11 -->
 <h3 id="t-mem"><span class="no">0.11</span>The command-file memory, zero-time version (Samples 12.37–12.39, 12.42)</h3>
@@ -712,7 +700,7 @@ LOG ex10 idx=2 result=deadbeef</code></pre>
 <label><input type="radio" value="b"> <code>int sv_task(int i, int o)</code></label>
 <label><input type="radio" value="c"> <code>void sv_task(int i, int o)</code></label>
 <label><input type="radio" value="d"> <code>void sv_task(int i, int* o)</code></label>
-<div class="why">Outputs are pointers. Annex H gives exported tasks an <code>int</code> return (the disable flag), but Verilator (like VCS per the book's footnote) generates <code>void</code>. Include the header and never use the return.</div></div>
+<div class="why">Outputs are pointers. §35.8 and H.8.2 give exported tasks an <code>int</code> return (the disable flag), but Verilator (like VCS per the book's footnote) generates <code>void</code>. Include the header and never use the return.</div></div>
 
 <div class="quiz" data-answer="b"><p class="qq">10. Sample 12.40 (exported <code>mem_write</code> with <code>#10</code>, called from a C context task) on Verilator 5.052 with <code>--timing</code>:</p>
 <label><input type="radio" value="a"> Runs and takes 10 ns per write</label>
@@ -750,7 +738,7 @@ LOG ex10 idx=2 result=deadbeef</code></pre>
 <div class="why">A class handle can't cross DPI and the export needs a fixed address at elaboration, so C names objects by integer index and module wrappers do <code>memq[idx].method()</code> (Samples 12.44/12.45, lab <code>mem_oop</code>).</div></div>
 
 <h2 id="s4"><span class="no">§4</span>Lab walkthrough</h2>
-<p><b>Run:</b> <code>cd tutorial/05_export_and_context/lab &amp;&amp; python3 check.py</code>. It builds 24 Verilator binaries in four parallel batches (about 15 s with a warm ccache, 1–2 min cold), runs them, and asserts 38 facts. Logs are in <code>build/&lt;name&gt;.log</code>, build output (including the expected compile errors) in <code>build/&lt;name&gt;.build</code>, and the generated prototypes in <code>build/vl_&lt;name&gt;/Vtop__Dpi.h</code>.</p>
+<p><b>Run:</b> <code>cd tutorial/05_export_and_context/lab &amp;&amp; python3 check.py</code>. It builds 27 Verilator binaries in five parallel batches (about 15 s with a warm ccache, 1–2 min cold), runs them, and asserts 44 facts. Logs are in <code>build/&lt;name&gt;.log</code>, build output (including the expected compile errors) in <code>build/&lt;name&gt;.build</code>, and the generated prototypes in <code>build/vl_&lt;name&gt;/Vtop__Dpi.h</code>.</p>
 <p><b>Predict first:</b> before opening the logs, write down (1) which instance prints in <code>scopes</code> and <code>setscope</code>, (2) whether <code>stale</code> crashes, (3) how many C calls <code>pure</code> and <code>comb</code> make, (4) the end time of <code>mem_pull</code>.</p>
 <div class="tbl"><table>
 <thead><tr><th>Experiment</th><th>Files</th><th>What it shows</th><th>Result (Verilator 5.052)</th></tr></thead>
@@ -764,13 +752,16 @@ LOG ex10 idx=2 result=deadbeef</code></pre>
 <tr><td>pure / comb</td><td class="mono">pure.sv, comb.sv, pure.c</td><td>call counts</td><td>7 = 7 (no elision); 11 calls for 5 changes</td></tr>
 <tr><td>bench</td><td class="mono">bench.sv/.c</td><td>ns per call</td><td>generic ≈ pure ≈ 1.3–2.3; context ≈ 10–23; +export ≈ 18–108 (load-dependent)</td></tr>
 <tr><td>outarg</td><td class="mono">outarg.sv/.c</td><td>unwritten output argument</td><td>garbage (e.g. 32636), not the old 7</td></tr>
+<tr><td>svtime</td><td class="mono">svtime.sv/.c</td><td>time API (H.13)</td><td>sim time in ps correct; <code>real</code> never written; submodule unit −9 (should be −6)</td></tr>
+<tr><td>xdyn</td><td class="mono">xdyn.sv</td><td>dynamic-array formal on an export (erroneous, §35.5.6)</td><td>Verilator internal fault (crash), no diagnostic</td></tr>
+<tr><td>xshared</td><td class="mono">xshared.sv/.c</td><td>one C name exported from two modules (§35.4)</td><td><code>top.u1.hello</code>, then <code>top.u2.hello</code></td></tr>
 <tr><td>mem_func</td><td class="mono">mem_func.sv/.c, mem.dat</td><td>Samples 12.37–12.39, 12.42</td><td>read 12 → 34, errs=0, t=0</td></tr>
 <tr><td>mem_task</td><td class="mono">mem_task.sv/.c</td><td>Sample 12.40 as printed</td><td>compile error at lines 15 and 18</td></tr>
 <tr><td>mem_oop</td><td class="mono">mem_oop.sv/.c, mem_oop.dat</td><td>Samples 12.43–12.45, index handles</td><td>34 / 88 per object; book's <code>R1 22 44</code> mismatches</td></tr>
 <tr><td>mem_pull</td><td class="mono">mem_pull.sv/.c</td><td>timed memory, pull model</td><td>reads at 50/70/90 ns, end 90 ns, clock kept ticking</td></tr>
 <tr><td>ex: predict, ex12_8, ex12_10, report, broadcast, pull1, sib</td><td class="mono">ex/</td><td>exercise solutions</td><td>see §2; all asserted</td></tr>
 </tbody></table></div>
-<p><b>What to look at:</b> open <code>build/vl_xtask/Vtop__Dpi.h</code> and compare it with Annex H (exported task = <code>int</code>). In <code>build/vl_outarg/Vtop___024root__0.cpp</code>, find the <code>__Vdpiimwrap_</code> wrapper Verilator generates around every import: the temporaries <code>k__Vcvt</code> and <code>o__Vcvt</code> are where conversions, and the output-argument garbage, come from. Then break things on purpose: remove <code>context</code> from <code>scopes.sv</code>, or swap the <code>svSetScope(prev)</code> restore out of <code>setscope.c</code>, and rerun.</p>
+<p><b>What to look at:</b> open <code>build/vl_xtask/Vtop__Dpi.h</code> and compare it with H.8.2 (exported task = <code>int</code>). In <code>build/vl_outarg/Vtop___024root__0.cpp</code>, find the <code>__Vdpiimwrap_</code> wrapper Verilator generates around every import: the temporaries <code>k__Vcvt</code> and <code>o__Vcvt</code> are where conversions, and the output-argument garbage, come from. Then break things on purpose: remove <code>context</code> from <code>scopes.sv</code>, or swap the <code>svSetScope(prev)</code> restore out of <code>setscope.c</code>, and rerun.</p>
 <p>New Verilator behaviors found here are also recorded in <code>tutorial/NOTES.md</code>.</p>
 
 <h2 id="s5"><span class="no">§5</span>Cheat sheet</h2>

@@ -10,29 +10,8 @@
 <script defer src="../assets/katex/katex.min.js"></script>
 <script defer src="../assets/katex/contrib/auto-render.min.js"></script>
 <script defer src="../assets/quiz.js"></script>
-<script>
-try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
-document.addEventListener('DOMContentLoaded',function(){
-  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
-  var toc=document.getElementById('toc');
-  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
-  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
-  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
-  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
-  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
-});
-function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
-function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
-</script>
-<style>
-/* local tweaks: code blocks */
-pre.sv{font-size:13px;line-height:1.5}
-pre.sv .c{color:var(--muted);font-style:italic}
-pre.sv .k{color:var(--acc);font-weight:600}
-p code,li code,td code{overflow-wrap:anywhere}
-td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
-.steps{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-family:var(--font-mono);font-size:12.5px;margin-top:8px}
-</style>
+<script>try{var t=localStorage.getItem('dpic-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<script defer src="../assets/guide.js"></script>
 </head>
 <body>
 <svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
@@ -66,8 +45,6 @@ td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
 </ol></nav></details>
 
 <main>
-<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
-<div class="steps"><a href="../06_golden_model_c/guide.html">← 06 Golden model in C</a><a href="../08_python_golden_model/guide.html">08 Python golden model →</a></div>
 <p class="kicker">DPI-C tutorial · Part B · Step 07</p>
 <h1>Embedding Python in a SystemVerilog simulation</h1>
 <p class="deck">DPI gives you C. CPython is a C library. Link it into the simulator, start the interpreter once, and every Python function becomes callable from SystemVerilog at a cost of tens of nanoseconds. What makes or breaks it is the boring part: lifecycle, reference counts, errors, buffers and threads.</p>
@@ -109,12 +86,12 @@ td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
 <!-- 0.2 -->
 <h3 id="r-build"><span class="no">0.2</span>Building and linking</h3>
 <p>The simulator executable must contain (or load) <code>libpython3.14</code>, and your DPI C file must see <code>Python.h</code>. Python ships the flags in <code>python3-config</code>, with one trap: since Python 3.8, <code>python3-config --ldflags</code> <b>omits</b> <code>-lpython3.X</code>, because extension modules must not link libpython (they get its symbols from the host process). An <em>embedder</em> must link it, and asks for it with <code>--embed</code>:</p>
-<pre class="sv"><code>$ python3-config --ldflags
+<pre class="sh"><code>$ python3-config --ldflags
 -L/usr/local/opt/python@3.14/.../config-3.14-darwin -ldl -framework CoreFoundation
 $ python3-config --embed --ldflags
 -L/usr/local/opt/python@3.14/.../config-3.14-darwin <span class="k">-lpython3.14</span> -ldl -framework CoreFoundation</code></pre>
 <p>Without <code>--embed</code> the link fails with <code>Undefined symbols for architecture x86_64: "_Py_Initialize"</code> (lab build <code>noembed</code>). The shared helper <code>common/lab.sh</code> wraps the right flags in <code>py_flags</code>, which turns each word into a Verilator <code>-CFLAGS</code> or <code>-LDFLAGS</code> argument:</p>
-<pre class="sv"><code><span class="c"># run.sh: build in the background, then run</span>
+<pre class="sh"><code><span class="c"># run.sh: build in the background, then run</span>
 vlb basic basic.sv basic.c $(py_flags)
 <span class="c"># expands to: verilator --binary ... basic.sv basic.c \</span>
 <span class="c">#   -CFLAGS -I.../include/python3.14 -LDFLAGS -L.../config-3.14-darwin -LDFLAGS -lpython3.14 ...</span></code></pre>
@@ -161,7 +138,7 @@ vlb basic basic.sv basic.c $(py_flags)
   ...
 <span class="k">end</span>
 <span class="k">final</span> py_fin();</code></pre>
-<pre class="sv"><code><span class="c">/* basic.c (excerpt) */</span>
+<pre class="cc"><code><span class="c">/* basic.c (excerpt) */</span>
 <span class="k">int</span> py_init(<span class="k">const char</span> *moddir) {
   <span class="k">if</span> (Py_IsInitialized()) <span class="k">return</span> 0;
   Py_Initialize();
@@ -214,7 +191,7 @@ vlb basic basic.sv basic.c $(py_flags)
 <!-- 0.4 -->
 <h3 id="r-config"><span class="no">0.4</span>Configuring the interpreter: PyConfig, PyInitConfig, venvs</h3>
 <p><code>Py_Initialize()</code> configures Python like the <code>python3</code> command with no arguments, reading <code>PYTHONPATH</code>, <code>PYTHONHOME</code> and friends from the environment. To control it from C there are two APIs. <b>PyConfig</b> (PEP 587, Python 3.8+) is a struct you fill and pass to <code>Py_InitializeFromConfig</code>. <b>PyInitConfig</b> (PEP 741, new in 3.14) sets options by name, so your code does not depend on the struct layout:</p>
-<pre class="sv"><code><span class="c">/* config.c: PyConfig (3.8+) */</span>
+<pre class="cc"><code><span class="c">/* config.c: PyConfig (3.8+) */</span>
 PyConfig cfg;
 PyConfig_InitPythonConfig(&amp;cfg);                    <span class="c">/* like `python3`; Isolated = like `python3 -I` */</span>
 PyStatus st = PyConfig_SetBytesString(&amp;cfg, &amp;cfg.program_name, "dpi-sim");
@@ -260,7 +237,7 @@ PyInitConfig_Free(c);</code></pre>
 </table></div>
 
 <p>The integer row deserves its demo. Python integers are unbounded, so <code>add(0x7fffffff, 1)</code> returns <code>2147483648</code>. <code>PyLong_AsLong</code> converts it happily into a 64-bit <code>long</code>, and the <code>(int)</code> cast at the DPI boundary wraps it to <code>-2147483648</code> (lab: <code>LOG wrap r=-2147483648</code>). No error, no warning: the SV side sees a plausible negative number. A golden model that silently wraps is worse than none. The checked version asks for overflow explicitly and returns a status:</p>
-<pre class="sv"><code><span class="c">/* returns 0 ok, 1 result does not fit in int, -1 Python error */</span>
+<pre class="cc"><code><span class="c">/* returns 0 ok, 1 result does not fit in int, -1 Python error */</span>
 <span class="k">int</span> py_add_checked(<span class="k">int</span> a, <span class="k">int</span> b, <span class="k">int</span> *sum) {       <span class="c">/* SV: output int sum */</span>
   PyObject *r = PyObject_CallFunction(f_add, "ii", a, b);
   <span class="k">if</span> (!r) { PyErr_Print(); <span class="k">return</span> -1; }
@@ -273,8 +250,8 @@ PyInitConfig_Free(c);</code></pre>
 }</code></pre>
 <p>Measured: <code>py_add_checked(0x7fffffff, 1)</code> returns 1; <code>py_add_checked(-5, 3)</code> returns 0 with <code>sum=-2</code>. With <code>longint</code> the boundary moves: <code>py_pow2(62)</code> returns 4611686018427387904, while 2<sup>63</sup> and 2<sup>64</sup> make <code>PyLong_AsLongLong</code> return <code>-1</code> and raise <code>OverflowError</code>. A C caller cannot tell that <code>-1</code> from a real <code>-1</code> without asking <code>PyErr_Occurred()</code>.</p>
 
-<p>Strings run into C's ownership problem in reverse. A DPI function that returns <code>string</code> returns a <code>const char*</code>, and the simulator copies it when the call returns (Annex H: the pointer must stay valid until then). <code>PyUnicode_AsUTF8(obj)</code> returns a pointer into the <code>str</code> object's own buffer, which is valid exactly as long as the object lives. So you cannot <code>Py_DECREF</code> the result before returning its UTF-8 pointer. The lab keeps the last result alive in a static and replaces it on the next call:</p>
-<pre class="sv"><code><span class="k">static</span> PyObject *last_str;                         <span class="c">/* owns the buffer returned to SV */</span>
+<p>Strings run into C's ownership problem in reverse. A DPI function that returns <code>string</code> returns a <code>const char*</code>, and the simulator copies it when the call returns (H.8.10: the pointer must stay valid until then). <code>PyUnicode_AsUTF8(obj)</code> returns a pointer into the <code>str</code> object's own buffer, which is valid exactly as long as the object lives. So you cannot <code>Py_DECREF</code> the result before returning its UTF-8 pointer. The lab keeps the last result alive in a static and replaces it on the next call:</p>
+<pre class="cc"><code><span class="k">static</span> PyObject *last_str;                         <span class="c">/* owns the buffer returned to SV */</span>
 <span class="k">const char</span> *py_reverse(<span class="k">const char</span> *s) {
   PyObject *r = PyObject_CallFunction(f_reverse, "s", s);
   <span class="k">if</span> (!r) { PyErr_Print(); <span class="k">return</span> ""; }
@@ -350,7 +327,7 @@ PyInitConfig_Free(c);</code></pre>
   $display("LOG sv_py_error n=%0d where=%s", n_py_errors, where);
   $display("%s", text);
 <span class="k">endfunction</span></code></pre>
-<pre class="sv"><code><span class="c">/* errors.c */</span>
+<pre class="cc"><code><span class="c">/* errors.c */</span>
 <span class="k">static void</span> report(<span class="k">const char</span> *where) {
   PyObject *exc = PyErr_GetRaisedException();               <span class="c">/* new ref; indicator cleared */</span>
   PyObject *lines = PyObject_CallOneArg(f_format, exc);     <span class="c">/* traceback.format_exception */</span>
@@ -367,7 +344,7 @@ PyInitConfig_Free(c);</code></pre>
   <span class="k">return</span> 0;
 }</code></pre>
 <p>Measured output for <code>err_divide(7, 0, q)</code>, a full traceback with 3.11+ column markers, inside the simulation log:</p>
-<pre class="sv"><code>LOG sv_py_error n=1 where=divide
+<pre class="out"><code>LOG sv_py_error n=1 where=divide
 Traceback (most recent call last):
   File ".../lab/py/errs.py", line 6, in divide
     return _inner(a, b)
@@ -438,7 +415,7 @@ LOG divide zero rc=-1</code></pre>
 <tr><td class="mono">th_all_safe</td><td>non-pure, <code>--threads 4 --threads-dpi all</code></td><td>Ensure/Release</td><td>OK · 4 threads</td></tr>
 </table></div>
 <p>The surprising row is <code>th_np_safe</code>. With the default <code>--threads-dpi pure</code>, Verilator serializes non-pure DPI calls onto one thread, but that thread is <b>not</b> the one that ran the <code>initial</code> block and <code>Py_Initialize</code>. So even a non-pure import, which you might believe is "single-threaded", crashes without GIL handling (<code>th_np</code>). Marking imports <code>pure</code> (or <code>--threads-dpi all</code>) spreads them over all four threads, which is legal only because of the GIL calls below. Python still runs one call at a time, so you gain no speed in the model, only correctness.</p>
-<pre class="sv"><code><span class="c">/* threads.c with -DGIL_SAFE: the pattern for any multithreaded host */</span>
+<pre class="cc"><code><span class="c">/* threads.c with -DGIL_SAFE: the pattern for any multithreaded host */</span>
 <span class="k">void</span> th_init(<span class="k">void</span>) {
   Py_Initialize();
   ...                                         <span class="c">/* import, cache callables */</span>
@@ -547,7 +524,7 @@ LOG divide zero rc=-1</code></pre>
 
 <div class="q" id="e3">
 <p><span class="n">E3 ★</span><b>Find the bug.</b> This init "cleans up" after itself. It works for a while, then crashes at an unrelated import. Why?</p>
-<pre class="sv"><code>PyObject *path = PySys_GetObject("path");
+<pre class="cc"><code>PyObject *path = PySys_GetObject("path");
 PyObject *dir = PyUnicode_FromString("py");
 PyList_Insert(path, 0, dir);
 Py_DECREF(dir);
@@ -567,12 +544,12 @@ Py_DECREF(path);            <span class="c">/* tidy up */</span></code></pre>
 <div class="q" id="e5">
 <p><span class="n">E5 ★★</span><b>Ex. 12.1 with a Python model.</b> Write <code>shift_py(int unsigned i, int n)</code>: a 32-bit shift, left for <code>n &gt; 0</code>, right (logical) for <code>n &lt; 0</code>, unchanged for <code>n == 0</code>. The model is Python, the bridge is C. First try the "obvious" model <code>(i &lt;&lt; n) &amp; 0xFFFFFFFF</code>: what happens for <code>n = -4</code>?</p>
 <details><summary>Show solution</summary><div class="a">
-<pre class="sv"><code><span class="c"># ex/py/exmods.py</span>
+<pre class="py"><code><span class="c"># ex/py/exmods.py</span>
 MASK = 0xFFFF_FFFF
 <span class="k">def</span> shift(i, n):
     i &amp;= MASK
     <span class="k">return</span> (i &lt;&lt; n) &amp; MASK <span class="k">if</span> n &gt;= 0 <span class="k">else</span> i &gt;&gt; -n</code></pre>
-<pre class="sv"><code><span class="c">/* ex/shift.c: "I" passes the unsigned value, so Python sees 0x800000F1, not a negative int */</span>
+<pre class="cc"><code><span class="c">/* ex/shift.c: "I" passes the unsigned value, so Python sees 0x800000F1, not a negative int */</span>
 <span class="k">unsigned int</span> shift_py(<span class="k">unsigned int</span> i, <span class="k">int</span> n, <span class="k">int</span> naive) {
   PyObject *r = PyObject_CallFunction(naive ? f_naive : f_shift, "Ii", i, n);
   <span class="k">if</span> (!r) { ... print type and message ...; <span class="k">return</span> 0xDEADBEEF; }
@@ -586,7 +563,7 @@ MASK = 0xFFFF_FFFF
 
 <div class="q" id="e6">
 <p><span class="n">E6 ★★</span><b>Find the bug.</b> This works in a unit test and returns garbage strings (sometimes) in a long simulation. Why? Give two fixes.</p>
-<pre class="sv"><code><span class="k">const char</span> *py_name(<span class="k">int</span> id) {
+<pre class="cc"><code><span class="k">const char</span> *py_name(<span class="k">int</span> id) {
   PyObject *r = PyObject_CallFunction(f_name, "i", id);
   <span class="k">const char</span> *s = PyUnicode_AsUTF8(r);
   Py_DECREF(r);
@@ -600,7 +577,7 @@ MASK = 0xFFFF_FFFF
 <div class="q" id="e7">
 <p><span class="n">E7 ★★</span><b>Write.</b> Make the bridge self-initializing: no <code>py_init</code> import, the module directory comes from the environment variable <code>PY_DPI_PATH</code> (default <code>.</code>), and initialization happens exactly once whatever the call order. SV still finalizes in <code>final</code>, but only if Python was ever started.</p>
 <details><summary>Show solution</summary><div class="a">
-<pre class="sv"><code><span class="c">/* ex/lazy.c */</span>
+<pre class="cc"><code><span class="c">/* ex/lazy.c */</span>
 <span class="k">static</span> PyObject *f_add;
 <span class="k">static int</span> inits;
 <span class="k">static int</span> ensure(<span class="k">void</span>) {
@@ -626,7 +603,7 @@ MASK = 0xFFFF_FFFF
 <div class="q" id="e8">
 <p><span class="n">E8 ★★</span><b>Write.</b> <code>py_eval(string expr, output real r)</code> evaluates a Python expression (with <code>math</code> available) and returns 0, or -1 after reporting <code>TypeName: message</code> through an exported SV function that calls <code>$error</code>. Test with <code>math.sqrt(2) * 2**10</code>, <code>sum(range(101))</code>, <code>1/0</code>, <code>'abc'</code>. What happens on Verilator, and how do you get all four results?</p>
 <details><summary>Show solution</summary><div class="a">
-<pre class="sv"><code><span class="c">/* ex/eval.c (core) */</span>
+<pre class="cc"><code><span class="c">/* ex/eval.c (core) */</span>
 <span class="k">static</span> PyObject *globals;                  <span class="c">/* {'__builtins__': ..., 'math': ...} built at init */</span>
 <span class="k">static int</span> fail(<span class="k">void</span>) {
   PyObject *exc = PyErr_GetRaisedException();
@@ -658,7 +635,7 @@ MASK = 0xFFFF_FFFF
 <div class="q" id="e10">
 <p><span class="n">E10 ★★★</span><b>Ex. 12.2–12.6 with Python objects.</b> The book grows <code>shift_c</code> into a shift register with a load flag (12.2), multiple instances identified by address (12.3), a call counter shared by all instances (12.4), an initial value (12.5), and a class (12.6). Do all of it with the state in a Python class, one Python object per SV-side instance, held through a <code>chandle</code>. Who owns the object, and how do you prove nothing leaks?</p>
 <details><summary>Show solution</summary><div class="a">
-<pre class="sv"><code><span class="c"># ex/py/exmods.py</span>
+<pre class="py"><code><span class="c"># ex/py/exmods.py</span>
 <span class="k">class</span> Shifter:
     calls = 0                           <span class="c"># class attribute: shared (Ex. 12.4)</span>
     <span class="k">def</span> __init__(self, init=0):         <span class="c"># Ex. 12.5</span>
@@ -667,7 +644,7 @@ MASK = 0xFFFF_FFFF
         Shifter.calls += 1
         self.reg = shift(i <span class="k">if</span> ld <span class="k">else</span> self.reg, n)
         <span class="k">return</span> self.reg</code></pre>
-<pre class="sv"><code><span class="c">/* ex/shifter.c: the chandle IS the PyObject*, a new reference owned by SV */</span>
+<pre class="cc"><code><span class="c">/* ex/shifter.c: the chandle IS the PyObject*, a new reference owned by SV */</span>
 <span class="k">void</span> *sh_new(<span class="k">unsigned int</span> init) {
   PyObject *obj = PyObject_CallFunction(cls, "I", init);
   <span class="k">if</span> (!obj) { PyErr_Print(); <span class="k">return</span> NULL; }
@@ -686,7 +663,7 @@ MASK = 0xFFFF_FFFF
 <div class="q" id="e11">
 <p><span class="n">E11 ★★★</span><b>§12.9 revisited: spawn vs embed.</b> Port Samples 12.51–12.52 (run a script with <code>system()</code>, return its exit status) to this machine, using <code>python3 -c 'import sys; sys.exit(3)'</code>. Then measure the cost per call of spawning <code>python3 -c 'pass'</code> against an embedded call to a builtin. Does the book's C compile as is?</p>
 <details><summary>Show solution</summary><div class="a">
-<pre class="sv"><code><span class="c">/* ex/spawn.c */</span>
+<pre class="cc"><code><span class="c">/* ex/spawn.c */</span>
 <span class="k">#include</span> &lt;sys/wait.h&gt;          <span class="c">/* the book's &lt;wait.h&gt; is Linux-only */</span>
 <span class="k">int</span> call_cmd(<span class="k">const char</span> *cmd) {
   <span class="k">int</span> status = system(cmd);      <span class="c">/* macOS WEXITSTATUS needs an lvalue */</span>
@@ -894,7 +871,7 @@ python3 check.py --no-run   <span class="c"># only re-checks the logs in build/<
 <li>Test with big numbers and fresh objects: immortals hide refcount bugs.</li>
 <li>Pin the environment from the command line (plusargs, venv), never from the shell.</li>
 </ol>
-<p class="foot">Sources: IEEE Std 1800-2023 clause 35 and Annex H; Spear &amp; Tumbush, <i>SystemVerilog for Verification</i> 3rd ed., §12.9 and Ex. 12.1–12.6; Python 3.14 documentation, <i>Embedding Python in Another Application</i>, <i>Python Initialization Configuration</i> (PEP 587, PEP 741), <i>Initialization, Finalization, and Threads</i>, PEP 683 (immortal objects); Verilator 5.052 manual (<code>--threads</code>, <code>--threads-dpi</code>). All measurements: <code>lab/check.py</code>.</p>
+<p class="foot">Sources: IEEE Std 1800-2023 clause 35, H.8.10 and H.9.3; Spear &amp; Tumbush, <i>SystemVerilog for Verification</i> 3rd ed., §12.9 and Ex. 12.1–12.6; Python 3.14 documentation, <i>Embedding Python in Another Application</i>, <i>Python Initialization Configuration</i> (PEP 587, PEP 741), <i>Initialization, Finalization, and Threads</i>, PEP 683 (immortal objects); Verilator 5.052 manual (<code>--threads</code>, <code>--threads-dpi</code>). All measurements: <code>lab/check.py</code>.</p>
 </main>
 </div>
 </body>

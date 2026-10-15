@@ -120,6 +120,14 @@ for k in (2, 3, 4, 5):
     ok("rc=0" in lint[k], f"rule {k}: accepted by Verilator (2, 4, 5 are illegal per LRM)")
 ok("Unpacked data type 'chandle' in packed struct/union" in lint[6] and "rc=1" in lint[6], "packed struct: error")
 
+# 9) C++ exception across the boundary (35.5.1.6: undefined): libc++ terminates, exit 134, no final blocks
+e = log("exc_throw.log")
+ok("LOG exc before r=10" in e and "uncaught exception of type std::runtime_error: model_step: bad input" in e
+   and "RUN_RC=134" in e and "LOG exc after" not in e and "LOG exc final" not in e, "throw: abort, final skipped")
+ok("LOG exc after r=20" in log("exc_ok.log") and "LOG exc final" in log("exc_ok.log"), "no throw: normal run")
+e = log("exc_safe.log")
+ok("C++ error: model_step: bad input" in e and "LOG exc after r=-1" in e and "LOG exc final" in e, "catch in the wrapper")
+
 fails = [p.name for p in B.glob("*.build") if "BUILD_FAIL" in p.read_text()]
 ok(sorted(fails) == ["booksigh.build", "nocxx.build"], f"only the expected builds fail: {fails}")
 print(f"PASS: {n_ok} checks")

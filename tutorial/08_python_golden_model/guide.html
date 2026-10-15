@@ -10,29 +10,8 @@
 <script defer src="../assets/katex/katex.min.js"></script>
 <script defer src="../assets/katex/contrib/auto-render.min.js"></script>
 <script defer src="../assets/quiz.js"></script>
-<script>
-try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
-document.addEventListener('DOMContentLoaded',function(){
-  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
-  var toc=document.getElementById('toc');
-  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
-  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
-  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
-  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
-  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
-});
-function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
-function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
-</script>
-<style>
-/* local tweaks: code blocks */
-pre.sv,pre.cc,pre.py{font-size:13px;line-height:1.5}
-pre .c{color:var(--muted);font-style:italic}
-pre .k{color:var(--acc);font-weight:600}
-p code,li code,td code{overflow-wrap:anywhere}
-td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
-.steps{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-family:var(--font-mono);font-size:12.5px;margin-top:8px}
-</style>
+<script>try{var t=localStorage.getItem('dpic-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<script defer src="../assets/guide.js"></script>
 </head>
 <body>
 <svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
@@ -68,8 +47,6 @@ td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
 </ol></nav></details>
 
 <main>
-<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
-<div class="steps"><a href="../07_embedding_python/guide.html">← 07 Embedding Python</a><a href="../index.html">Tutorial index →</a></div>
 <p class="kicker">DPI-C tutorial · Part B · Step 08</p>
 <h1>Python as the golden model</h1>
 <p class="deck">The reference model you trust most is often three lines of Python: <code>zlib.crc32</code>, a numpy convolution, an unbounded <code>int</code>. This step wires such models to the two DUTs in <code>common/rtl</code> behind a DPI contract that a C model could implement just as well, and measures what the convenience costs.</p>
@@ -96,7 +73,7 @@ td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
   <span class="k">import</span> "DPI-C" <span class="k">function void</span>     fir8_block(<span class="k">input chandle</span> h, <span class="k">input shortint</span> x[],
                                               <span class="k">output shortint</span> y[], <span class="k">input int</span> n);
 <span class="k">endpackage</span></code></pre>
-<pre class="sv"><code><span class="c"># lab/run.sh: same testbench, two binaries</span>
+<pre class="sh"><code><span class="c"># lab/run.sh: same testbench, two binaries</span>
 G6=../../06_golden_model_c/lab                       <span class="c"># the contract and the C backend live in step 06</span>
 PY="$G6/golden_pkg.sv py_extra_pkg.sv golden_py.c $G6/wall.c $(py_flags)"
 C="$G6/golden_pkg.sv $G6/golden.c $G6/wall.c"
@@ -437,7 +414,7 @@ show("raises", py_call_i64("golden", "fails", none));    <span class="c">// valu
 <!-- 0.10 -->
 <h3 id="r-bug"><span class="no">0.10</span>Proving the scoreboard can fail</h3>
 <p>A scoreboard that has never failed has not been tested. Bug injection is the backend's business, not the contract's, so the SV does not change: step 06's <code>golden.c</code> rebuilt with <code>-DMUTANT=1</code>, and <code>golden.py</code> started with <code>GOLDEN_BUG=fir_trunc</code> in the environment (same binary), both make the model truncate instead of rounding, a one-LSB difference that only shows on about half the samples. The per-sample scoreboard, the per-block scoreboard and the C backend all report the <b>same</b> first mismatch and the same count:</p>
-<pre class="sv"><code>LOG first_mismatch unit=0 sample=0 dut=-12612 model=-12613
+<pre class="out"><code>LOG first_mismatch unit=0 sample=0 dut=-12612 model=-12613
 LOG fir samples=2048 calls=4096 errors=1729 saturated=631
 FAIL</code></pre>
 <p>Three things are proven at once: the comparison is sensitive to one LSB; the per-block scoreboard reports the same absolute sample index as the per-sample one (the index arithmetic <code>n - nb + 1 + i</code> is right); and the Python and C models make the same mistake in the same place, so they share the contract and differ only in implementation.</p>
@@ -785,7 +762,7 @@ y[3] &amp;= 0xF;</code></pre>
 <label><input type="radio" value="b"> Python ints are limited to 96 bits.</label>
 <label><input type="radio" value="c"> To convert from big-endian to little-endian.</label>
 <label><input type="radio" value="d"> Because Verilator stores 4-state values there.</label>
-<div class="why">(a) Annex H leaves the unused bits of the canonical representation unspecified; an unmasked read can turn a 100-bit value into a 128-bit one. (b) Python ints are unbounded. (c) Masking does not reorder bytes. (d) Verilator is 2-state and <code>bit</code> has no <code>bval</code> anyway.</div>
+<div class="why">(a) H.7.7 leaves the unused bits of the canonical representation unspecified; an unmasked read can turn a 100-bit value into a 128-bit one. (b) Python ints are unbounded. (c) Masking does not reorder bytes. (d) Verilator is 2-state and <code>bit</code> has no <code>bval</code> anyway.</div>
 </div>
 
 <div class="quiz" data-answer="c">
@@ -907,8 +884,7 @@ cat build/results.txt       <span class="c"># every LOG/PASS/FAIL line</span></c
 <li>Commercial simulators accept dynamic arrays, literals, and keep going after <code>$error</code>; Verilator does not. Write to the intersection.</li>
 <li>When Python should drive the testbench, not just model it, look at PyHDL-IF (UVM) or cocotb (new TBs).</li>
 </ol>
-<div class="steps"><a href="../07_embedding_python/guide.html">← 07 · Embedding Python</a><a href="../index.html">Tutorial index →</a></div>
-<p class="foot">Sources: Spear &amp; Tumbush, <i>SystemVerilog for Verification</i>, 3rd ed., ch. 12 (Ex. 12.1–12.6, §12.9); IEEE 1800-2023 clause 35 and Annex H; Python 3.14 C API (<code>PyLong_AsNativeBytes</code>, <code>PyErr_GetRaisedException</code>); zlib documentation (<code>crc32</code>); M. Ballance, <i>Properly Introducing Python to your UVM Testbench</i>, DVCon US 2026; pysv and PyHDL-IF documentation. Measurements: <code>lab/check.py</code>.</p>
+<p class="foot">Sources: Spear &amp; Tumbush, <i>SystemVerilog for Verification</i>, 3rd ed., ch. 12 (Ex. 12.1–12.6, §12.9); IEEE 1800-2023 clause 35, H.7.7, H.8.4, H.8.10; Python 3.14 C API (<code>PyLong_AsNativeBytes</code>, <code>PyErr_GetRaisedException</code>); zlib documentation (<code>crc32</code>); M. Ballance, <i>Properly Introducing Python to your UVM Testbench</i>, DVCon US 2026; pysv and PyHDL-IF documentation. Measurements: <code>lab/check.py</code>.</p>
 
 
 

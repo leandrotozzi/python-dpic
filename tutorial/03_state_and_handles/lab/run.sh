@@ -37,6 +37,14 @@ for b in thr1 thr2 thr2none thr2all; do vlr $b $b; done
 vlr chandle_null chandle +null
 vlr booksig_null booksig +null      # book's version has no null guard
 
+# C++ exception across the DPI boundary (35.5.1.6)
+vlb exc      exc.sv exc.cpp
+vlb excsafe  exc.sv exc.cpp -CFLAGS -DSAFE
+wait
+vlr exc_ok    exc
+vlr exc_throw exc +throw
+vlr exc_safe  excsafe +throw
+
 # exercise solutions
 vlb ex2      ex/shift_static.sv ex/shift_static.c
 vlb ex345    ex/shift_inst.sv ex/shift.c

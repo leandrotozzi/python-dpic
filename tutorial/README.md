@@ -33,6 +33,9 @@ Shared DUTs (used from step 06 on): [`common/rtl/crc32_stream.sv`](common/rtl/cr
 (CRC-32/IEEE, bit-exact with `zlib.crc32`) and [`common/rtl/fir8.sv`](common/rtl/fir8.sv)
 (8-tap Q1.15 FIR, round half-up, saturating).
 
+**Reference:** [What doesn't work (or works differently) in Verilator 5.052](verilator_gaps.html):
+every measured Verilator DPI gap by topic, the 10 that bite, and the book's ch. 12 errata.
+
 ## Toolchain
 
 Measured on macOS x86_64: **Verilator 5.052** (the only DPI-capable simulator here; Icarus has no DPI),

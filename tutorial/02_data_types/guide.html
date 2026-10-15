@@ -10,31 +10,8 @@
 <script defer src="../assets/katex/katex.min.js"></script>
 <script defer src="../assets/katex/contrib/auto-render.min.js"></script>
 <script defer src="../assets/quiz.js"></script>
-<script>
-try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
-document.addEventListener('DOMContentLoaded',function(){
-  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
-  var toc=document.getElementById('toc');
-  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
-  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
-  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
-  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
-  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
-});
-function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
-function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
-</script>
-<style>
-/* local tweaks: SV and C code */
-pre.sv,pre.cc,pre.sh{font-size:13px;line-height:1.5}
-pre .c{color:var(--muted);font-style:italic}
-pre .k{color:var(--acc);font-weight:600}
-p code,li code,td code{overflow-wrap:anywhere}
-td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
-.steps{display:flex;justify-content:space-between;gap:12px;font-family:var(--font-mono);font-size:12.5px;margin-top:6px}
-.dg .bit{font:500 11px var(--font-mono);fill:var(--muted);text-anchor:middle}
-.dg .hexv{font:600 13px var(--font-mono);text-anchor:middle;dominant-baseline:central}
-</style>
+<script>try{var t=localStorage.getItem('dpic-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<script defer src="../assets/guide.js"></script>
 </head>
 <body>
 <svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
@@ -70,8 +47,6 @@ td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
 </ol></nav></details>
 
 <main>
-<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
-<div class="steps"><a href="../01_first_call/guide.html">← Prev: 01 · First call</a><span>Step 02 of 08</span><a href="../03_state_and_handles/guide.html">Next: 03 · State and handles →</a></div>
 <p class="kicker">DPI-C from scratch · Part A · Step 02</p>
 <h1>Data types: what C actually receives</h1>
 <p class="deck">Every DPI argument has two declarations, one in SystemVerilog and one in C, and no tool compares them for you unless you ask. This step maps every type that can cross the boundary, measures what Verilator really passes, and shows where the bits you did not think about end up: unused upper bits, sign bits, X and Z, and outputs nobody wrote.</p>
@@ -81,7 +56,7 @@ td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
 <h2 id="tutorial"><span class="no">§0 · Tutorial</span>The step in one idea</h2>
 <p class="lead">The simulator and the C compiler each lay out data their own way, and DPI is the contract that says how a value of one is presented to the other. For small types the contract is plain C: an <code>int</code> is an <code>int</code>. For everything that has no C equivalent (vectors of arbitrary width, 4-state values, strings owned by the simulator) the contract is a <em>canonical representation</em> defined in IEEE 1800 Annex H and the header <code>svdpi.h</code> (Annex I). Learn the canonical forms once and you can pass anything a hardware testbench needs.</p>
 <p>Three questions run through the whole step. <b>What bits does C see?</b> (layout, word order, unused bits, signedness). <b>What bits does SV get back?</b> (masking, 4-state planes, outputs C never wrote). <b>Who guarantees it?</b> The LRM, or just the simulator you happen to run. The difference matters: a model that works on Verilator because Verilator zeroes and masks unused bits can break on a commercial simulator that does neither, and the LRM allows both behaviors.</p>
-<p>Every number below comes from the <a href="#s4">lab</a>: one testbench per topic, a <code>check.py</code> with 71 assertions. Where the book (2012, IEEE 1800-2009, VCS-era) is wrong or dated, a <i>Book erratum</i> callout says so. <a href="../01_first_call/guide.html">Step 01</a> covered the build, linkage and the generated <code>Vtop__Dpi.h</code> header; this step assumes them.</p>
+<p>Every number below comes from the <a href="#s4">lab</a>: one testbench per topic, a <code>check.py</code> with 72 assertions. Where the book (2012, IEEE 1800-2009, VCS-era) is wrong or dated, a <i>Book erratum</i> callout says so. <a href="../01_first_call/guide.html">Step 01</a> covered the build, linkage and the generated <code>Vtop__Dpi.h</code> header; this step assumes them.</p>
 
 <!-- 0.1 -->
 <h3 id="r-modes"><span class="no">0.1</span>Three ways across the boundary</h3>
@@ -107,7 +82,7 @@ td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
 <path class="e hot" d="M300,228 H270" marker-end="url(#ah-acc)"/>
 <text class="note mid" x="365" y="280">copied back (and masked) after C returns</text>
 </svg>
-<figcaption><b>Fig. 0.1</b>The three passing modes of Annex H. The mode, not the SV type alone, picks the C type: <code>int</code> is <code>int</code> as an input and <code>int*</code> as an output; <code>bit [39:0]</code> is always a pointer. Section 0.9 opens the "temp" box.</figcaption>
+<figcaption><b>Fig. 0.1</b>The three passing modes of Annex H: by value (H.8.3), by reference (H.8.4), by handle (H.8.6). The mode, not the SV type alone, picks the C type: <code>int</code> is <code>int</code> as an input and <code>int*</code> as an output; <code>bit [39:0]</code> is always a pointer. Section 0.9 opens the "temp" box.</figcaption>
 </figure>
 <p>The full table, with what Verilator 5.052 generates in <code>Vtop__Dpi.h</code> (every row is in the lab's <code>types</code> or <code>proto</code> experiments):</p>
 <div class="tbl"><table>
@@ -182,7 +157,7 @@ C declared double:   LOG c_sreal v=0.10000000000000001         LOG sreal v=0.100
 
 <!-- 0.5 -->
 <h3 id="r-packed"><span class="no">0.5</span>Packed vectors: the canonical representation</h3>
-<p>A packed <code>bit</code> vector of any width crosses as an array of 32-bit chunks, <code>svBitVecVal</code> (= <code>uint32_t</code>). The layout is fixed by the LRM, independent of the simulator's internal storage:</p>
+<p>A packed <code>bit</code> vector of any width crosses as an array of 32-bit chunks, <code>svBitVecVal</code> (= <code>uint32_t</code>). The layout is fixed by the LRM (H.7.7), independent of the simulator's internal storage:</p>
 <ul>
 <li>Chunk 0 holds bits <code>[31:0]</code>, chunk 1 bits <code>[63:32]</code>, and so on: <b>little-endian by word</b>, whatever the declared range (<code>[0:39]</code> or <code>[39:0]</code>, the LSB of the <em>value</em> is bit 0 of chunk 0).</li>
 <li>The number of chunks is <code>SV_PACKED_DATA_NELEMS(W)</code> = $\lceil W/32 \rceil$.</li>
@@ -213,6 +188,7 @@ void c_add200(const svBitVecVal* a, const svBitVecVal* b, svBitVecVal* sum) {
 <pre class="sh"><code>LOG dirty d=ffffffffff eq=1 plus1=0000000000</code></pre>
 <p>Verilator masks: the variable is the 40-bit all-ones value, it compares equal to <code>40'hFF_FFFF_FFFF</code>, and adding 1 wraps to 0. The generated wrapper copies back with <code>VL_SET_Q_SVBV(40, v, v__Vcvt + 0)</code>, which keeps exactly 40 bits. Commercial simulators that pass a pointer straight into their own storage (to avoid the copy) may not.</p>
 <div class="callout hv"><p>Rule of thumb for the unused bits: <b>on input, mask them before you use them; on output, write them as zero.</b> Both are one line (<code>&amp; SV_MASK(W % 32)</code>), both are free, and together they make the code correct under every simulator the LRM allows. Verilator's zeroing and masking hide the bug, which is exactly why you should not test portability on Verilator alone.</p></div>
+<div class="callout note"><p><b>Which representation is this?</b> <code>svDpiVersion()</code> (H.10.1.3) returns a string naming the DPI C layer the simulator implements: <code>"1800-2005"</code> means the canonical <code>svBitVecVal</code>/<code>svLogicVecVal</code> chunks described here; <code>"SV3.1a"</code> would mean the older opaque-handle representation of H.14 that the deprecated <code>"DPI"</code> string still selects. Verilator 5.052 returns <code>1800-2005</code> (lab: <code>ver.sv</code>). A C library shipped to several teams can check it once at start-up instead of trusting the build.</p></div>
 
 <!-- 0.6 -->
 <h3 id="r-signed"><span class="no">0.6</span>Signed vectors and sign extension</h3>
@@ -306,7 +282,7 @@ LOG partsel f=dead w_ok=0 w=00000000000000000000000000002fbbc00000000000003039</
 
 <!-- 0.9 -->
 <h3 id="r-dir"><span class="no">0.9</span>Directions: who owns which bytes</h3>
-<p>The LRM's rules for <code>input</code>, <code>output</code> and <code>inout</code> (§35.5.1.x, Annex H.8) are short:</p>
+<p>The LRM's rules for <code>input</code>, <code>output</code> and <code>inout</code> (§35.5.1.2 and §35.6.1 on the SV side, H.8.7–H.8.8 on the C side) are short:</p>
 <ul>
 <li>An <code>input</code> must not be modified by C. Packed inputs come as <code>const</code> pointers so the compiler enforces it; declare scalar inputs <code>const</code> too (Sample 12.5).</li>
 <li>An <code>output</code> has an <b>undetermined initial value</b>. C must not read it, and must write all of it.</li>
@@ -360,7 +336,7 @@ $display(h == null, c_is_null(null));   <span class="c">// 0 1 : SV null arrives
 
 <!-- 0.11 -->
 <h3 id="r-ret"><span class="no">0.11</span>What a function may return</h3>
-<p>A function result travels in a register, so §35.5.5 limits it to "small values": <code>void</code>, <code>byte</code>, <code>shortint</code>, <code>int</code>, <code>longint</code>, <code>real</code>, <code>shortreal</code>, <code>chandle</code>, <code>string</code>, scalar <code>bit</code> and <code>logic</code>, and <b>packed <code>bit</code> arrays up to 32 bits</b> (returned as an <code>svBitVecVal</code>). Anything wider or 4-state goes through an <code>output</code> argument. Verilator enforces the rule with clear messages:</p>
+<p>A function result travels in a register, so §35.5.5 (repeated in H.8.9) limits it to "small values": <code>void</code>, <code>byte</code>, <code>shortint</code>, <code>int</code>, <code>longint</code>, <code>real</code>, <code>shortreal</code>, <code>chandle</code>, <code>string</code>, and <b>scalar</b> <code>bit</code> and <code>logic</code>. That is the whole list: a packed vector, even <code>bit [6:0]</code>, is not on it and goes through an <code>output</code> argument. Verilator 5.052 is more permissive than the LRM: it also accepts packed <code>bit</code> results up to 32 bits (returned as an <code>svBitVecVal</code>), which is an extension that will not port. Its messages for the rest:</p>
 <div class="tbl"><table>
 <thead><tr><th>Result type</th><th>Verilator 5.052</th></tr></thead>
 <tbody>
@@ -370,7 +346,7 @@ $display(h == null, c_is_null(null));   <span class="c">// 0 1 : SV null arrives
 <tr><td class="mono">logic</td><td class="mono">svLogic f();</td></tr>
 <tr><td class="mono">string, chandle</td><td class="mono">const char* f(); &nbsp; void* f();</td></tr>
 </tbody></table></div>
-<div class="callout errata"><p>§12.1.4 says a function "cannot return a vector such as <code>bit [6:0]</code>". The LRM allows it (packed <code>bit</code> arrays up to 32 bits), and the lab's <code>rt_bit7</code> returns 100 through an <code>svBitVecVal</code> result. What is forbidden is a <code>bit</code> vector wider than 32 bits or any 4-state vector.</p></div>
+<div class="callout note" style="--c-label:'Verilator extension'"><p>§12.1.4 says a function "cannot return a vector such as <code>bit [6:0]</code>", and the book is right: §35.5.5 and H.8.9 allow only <em>scalar</em> <code>bit</code>/<code>logic</code> results. Verilator accepts the vector anyway (the lab's <code>rt_bit7</code> returns 100 through an <code>svBitVecVal</code> result), so code that relies on it compiles here and fails on a strict tool. Return an <code>int</code> or use an <code>output bit [6:0]</code>. The confusion has a source: the LRM's own example in §35.5.4, <code>import "DPI-C" function bit [15:0] getStimulus();</code>, contradicts its normative list (see the <a href="../verilator_gaps.html#lrm-errata">LRM errata</a>).</p></div>
 
 <!-- 0.12 -->
 <h3 id="r-counter"><span class="no">0.12</span>Sample 12.12 on a 2-state simulator</h3>
@@ -613,9 +589,9 @@ endfunction</code></pre>
 <p class="qq">5. Which return type is legal for an imported function?</p>
 <label><input type="radio" value="a"> <code>bit [63:0]</code></label>
 <label><input type="radio" value="b"> <code>logic [3:0]</code></label>
-<label><input type="radio" value="c"> <code>bit [31:0]</code></label>
-<label><input type="radio" value="d"> <code>integer</code></label>
-<div class="why">Packed <code>bit</code> results up to 32 bits are allowed (as <code>svBitVecVal</code>). Wider bit vectors and any 4-state vector (<code>logic [3:0]</code>, <code>integer</code>) are not; use an output argument. <code>longint</code> would be the legal way to return 64 bits.</div>
+<label><input type="radio" value="c"> <code>longint unsigned</code></label>
+<label><input type="radio" value="d"> <code>bit [31:0]</code></label>
+<div class="why">§35.5.5 lists only C-like types (<code>byte</code>…<code>longint</code>, <code>real</code>, <code>shortreal</code>, <code>chandle</code>, <code>string</code>) and scalar <code>bit</code>/<code>logic</code>; <code>longint unsigned</code> is the legal way to return 64 bits. (d) is the tempting one: Verilator 5.052 compiles it (an extension, returned as <code>svBitVecVal</code>), but no packed vector is a legal result, so it will not port. (a) and (b) are rejected even by Verilator.</div>
 </div>
 
 <div class="quiz" data-answer="b">
@@ -702,7 +678,7 @@ endfunction</code></pre>
 <h2 id="s4"><span class="no">§4 · Lab</span>Measure the mapping yourself</h2>
 <p>Everything lives in <code>02_data_types/lab/</code>. Run it:</p>
 <pre class="sh"><code>cd tutorial/02_data_types/lab
-python3 check.py          <span class="c"># runs run.sh (17 clean builds, 2 fail on purpose; ~10-60 s with ccache), then 71 assertions</span>
+python3 check.py          <span class="c"># runs run.sh (18 clean builds, 2 fail on purpose; ~10-60 s with ccache), then 72 assertions</span>
 python3 check.py --no-run <span class="c"># re-check existing build/ logs</span></code></pre>
 <p><b>Predict first</b>, then open the log: what does C see for X and Z? What happens to an output C never writes? What does a <code>float</code>-declared function read when Verilator passes <code>shortreal</code>? What is in the upper bits of a negative <code>bit signed [39:0]</code>?</p>
 <div class="tbl"><table>
@@ -718,6 +694,7 @@ python3 check.py --no-run <span class="c"># re-check existing build/ logs</span>
 <tr><td class="mono">dir.sv/.c</td><td>output/inout/alias/scalar masking</td><td class="mono">junk in, junk out; inout ok; input is a copy</td></tr>
 <tr><td class="mono">counter4.sv/.c</td><td>Samples 12.11/12.12</td><td class="mono">no X/Z error ever fires</td></tr>
 <tr><td class="mono">build/proto/*</td><td>prototypes and illegal result types</td><td class="mono">see 0.11; <code>ref</code> accepted</td></tr>
+<tr><td class="mono">ver.sv, ver.c</td><td><code>svDpiVersion()</code> (H.10.1.3)</td><td class="mono">LOG ver dpi=1800-2005</td></tr>
 <tr><td class="mono">ex/*</td><td>exercise solutions</td><td class="mono">all PASS</td></tr>
 </tbody></table></div>
 <p>Things to look at beyond the logs: <code>build/vl_dir/Vtop___024unit__0.cpp</code> (the generated wrappers of 0.9: the uninitialized temporaries and the masking copy-backs) and <code>build/vl_types/Vtop__Dpi.h</code> (the prototype table of 0.1, written by the tool). The junk values in <code>dir.log</code> (<code>c_peek in=…</code>, <code>skip o=…</code>) change from run to run; <code>check.py</code> asserts only that SV received exactly what C saw. One lab detail is also an SV lesson: <code>$display(ok ? "PASS" : "FAIL")</code> printed <code>1346458451</code>, because a string literal inside an expression is an integral value (<code>"PASS"</code> = <code>0x50415353</code>); the testbenches use an <code>if</code>.</p>

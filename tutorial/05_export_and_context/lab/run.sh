@@ -29,12 +29,17 @@ vlb mem_pull mem_pull.sv mem_pull.c
 vlb sib      ex/static_init_bug.sv mem_pull.c
 vlb pull1    ex/pull1.sv ex/pull1.c
 wait
+# batch 3b: time API (H.13), export restrictions and shared C names (35.4, 35.5.6)
+vlb svtime   svtime.sv svtime.c
+vlb xdyn     xdyn.sv
+vlb xshared  xshared.sv xshared.c
+wait
 # batch 4: remaining exercise solutions
 for e in ex12_8 ex12_10 predict report broadcast; do vlb $e ex/$e.sv ex/$e.c; done
 wait
 
 for e in scopes setscope noctx stale xtask fn2task pure comb bench outarg mem_func mem_oop mem_pull sib pull1 \
-         ex12_8 ex12_10 predict broadcast; do
+         ex12_8 ex12_10 predict broadcast svtime xshared; do
   vlr $e $e
 done
 vlr report report +verilator+error+limit+10

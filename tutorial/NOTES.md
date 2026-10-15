@@ -123,3 +123,21 @@ Append-only. One `## NN_name` section per step.
 - 06's `golden.c` and `wall.c` rely on `#include "Vtop__Dpi.h"` for C linkage (no `extern "C"` of their own). A testbench that links `wall.c` without importing `wall_s` still builds: the definition just gets C++ linkage and is unused.
 - A contract with no shutdown call: the bridge registers `atexit(Py_FinalizeEx wrapper)` on first init. Verilator's `main()` returns after `final` blocks, so Python's buffered stdout is flushed and `Fir8.__del__` runs.
 - Bug selection without SV or rebuild: `GOLDEN_BUG=fir_trunc vlr ...` (bash passes a prefix assignment to a function's child processes); the C twin is `-CFLAGS -DMUTANT=1` (rebuild).
+
+## LRM review corrections
+
+Checked against IEEE 1800-2023 clause 35 and Annexes H, I, J (2026-10-15). Older lines above stay as written; these supersede them.
+
+- **Return types:** `bit [6:0]`/`bit [31:0]` results are NOT legal per §35.5.5 and H.8.9 (only byte…string and scalar bit/logic). Verilator accepting packed bit results ≤ 32 bits is an extension, so Spear §12.1.4 is not an erratum. The LRM's own §35.5.4 example `function bit [15:0] getStimulus()` contradicts its normative list.
+- **`import "DPI"`** (02 notes above: "1800-2005 spelling"): it selects the deprecated SV3.1a packed-argument passing (opaque handles, H.14). §35.5.4 requires a warning or an error, so Verilator's error is compliant.
+- **Unpacked array element order** is fixed by H.7.3 and H.7.6(c): the lower index goes first. Verilator follows it; it is not implementation-defined.
+- **Packed open-array elements:** H.7.3 requires canonical form; H.12.4 requires `svGetArrElemPtr*` to return NULL if the storage differs. Verilator's native storage with non-NULL pointers is an LRM deviation.
+- **Exported tasks declared `void`** in `Vtop__Dpi.h`: deviation from §35.8 / H.8.2 (same header as an import task, `int`).
+- **Export from a non-context import:** an error per §35.5.3, behavior undefined per H.9.3 (user error, not implementation-defined).
+- **`svDimensions`:** H.12.2 defers to §20.7 (`$dimensions` counts packed + unpacked). Verilator returns unpacked dims only; the LRM is ambiguous.
+- **`pure` misuse (new, 01 `pure_rules.sv`):** `pure function void`, `pure task`, and `pure` with an `output` all build and run with no diagnostic (illegal per §35.5.1.3/§35.5.2).
+- **Shared C names (new, 01 `cid.sv`, 05 `xshared.sv`):** one C name in two scopes with an identical signature works. Changing only the `context` qualifier gives `Duplicate declaration of DPI function with different signature` (then an internal error). Two modules exporting `hello` + `svSetScope` works.
+- **C++ exception through an import (new, 03 `exc.cpp`):** libc++ `terminating due to uncaught exception`, exit 134, no `final` blocks (§35.5.1.6: undefined). try/catch in the wrapper fixes it.
+- **Time API (new, 05 `svtime.c`):** `svGetTime` ignores `type` and scope: always sim time in precision units (25 ns → 25000 at 1 ps), `real` never written. `svGetTimeUnit` reports −9 for a module with `timeunit 1us` (the scope table stores the global unit). `svGetTimePrecision` ignores the scope.
+- **`svDpiVersion()`** returns `"1800-2005"` (02 `ver.c`).
+- **Dynamic-array formal on an export (new, 05 `xdyn.sv`):** `%Error: Verilator internal fault, sorry.` instead of a diagnostic (erroneous per §35.5.6).

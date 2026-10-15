@@ -10,29 +10,8 @@
 <script defer src="../assets/katex/katex.min.js"></script>
 <script defer src="../assets/katex/contrib/auto-render.min.js"></script>
 <script defer src="../assets/quiz.js"></script>
-<script>
-try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
-document.addEventListener('DOMContentLoaded',function(){
-  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
-  var toc=document.getElementById('toc');
-  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
-  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
-  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
-  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
-  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
-});
-function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
-function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
-</script>
-<style>
-pre.sv{font-size:13px;line-height:1.5}
-pre.sv .c{color:var(--muted);font-style:italic}
-pre.sv .k{color:var(--acc);font-weight:600}
-p code,li code,td code{overflow-wrap:anywhere}
-td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
-td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-.stepnav{display:flex;justify-content:space-between;gap:12px;font-family:var(--font-mono);font-size:12.5px;margin:8px 0 0}
-</style>
+<script>try{var t=localStorage.getItem('dpic-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<script defer src="../assets/guide.js"></script>
 </head>
 <body>
 <svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
@@ -65,8 +44,6 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 </ol></nav></details>
 
 <main>
-<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
-<div class="stepnav"><a href="../05_export_and_context/guide.html">← 05 Export and context</a><a href="../07_embedding_python/guide.html">07 Embedding Python →</a></div>
 <p class="kicker">DPI-C tutorial · Step 06 · End of Part A</p>
 <h1>The golden-model pattern: a C reference model behind a self-checking testbench</h1>
 <p class="deck">Steps 01–05 taught the mechanics of DPI: types, handles, arrays, exports. This step puts them to work on the job DPI exists for in verification: an independent C model of the DUT's spec, called from a scoreboard, compared bit-exactly, and proven to fire. The SV half of the contract is built so step 08 can replace the C with Python without touching a line of SystemVerilog.</p>
@@ -168,9 +145,9 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 <li><b>Fixed buffers plus an explicit length.</b> The natural signature for a variable-length message is <code>crc32_msg(input byte unsigned msg[])</code>, called with a dynamic array. Verilator 5.052 rejects that at elaboration (below), so the TB copies into a fixed-size buffer and passes the length. Commercial simulators accept dynamic-array actuals for open-array formals (IEEE 1800-2023 §35.5.6.1), but the length argument costs nothing and keeps the contract portable.</li>
 </ul>
 <div class="callout asic" style="--c-label:'In Verilator'"><p>Passing a dynamic array (or a queue) to an open-array DPI formal fails at elaboration, pointing at the <em>import</em> line:</p>
-<pre class="sv"><code>%Error-UNSUPPORTED: golden_pkg.sv:10:75: Unsupported: DPI argument of type DYNARRAYDTYPE
+<pre class="out"><code>%Error-UNSUPPORTED: golden_pkg.sv:10:75: Unsupported: DPI argument of type DYNARRAYDTYPE
 %Error: Internal Error: ... ../V3Task.cpp:759: No non-inline task associated with this task call?</code></pre>
-<p>A fixed-size unpacked array as the actual works, both as <code>input</code> and <code>output</code>, and <code>svSize</code>, <code>svLow</code>, <code>svGetArrayPtr</code> and <code>svGetArrElemPtr1</code> behave as Annex H says. Recorded in <code>tutorial/NOTES.md</code>.</p></div>
+<p>A fixed-size unpacked array as the actual works, both as <code>input</code> and <code>output</code>, and <code>svSize</code>, <code>svLow</code>, <code>svGetArrayPtr</code> and <code>svGetArrElemPtr1</code> behave as H.12.2 and H.12.4 says. Recorded in <code>tutorial/NOTES.md</code>.</p></div>
 <div class="callout hv"><p>Design the contract as if the implementation will change, because it will. A model often starts in C, is replaced by the algorithm team's Python or MATLAB, and ends up as a compiled library from another group. If the SV side only depends on <code>golden_pkg.sv</code>, each swap is a link-line change. Step 08 makes that literal: same <code>golden_pkg.sv</code>, same testbenches, a different object behind the symbols.</p></div>
 
 <figure class="fig">
@@ -194,7 +171,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 <!-- 0.4 -->
 <h3 id="t-cmodel"><span class="no">0.4</span>The C models</h3>
 <p><code>lab/golden.c</code> has two parts. The first is the CRC. A bitwise byte update builds the 256-entry table once, and the model itself uses the table. The code is short, and its structure is the point:</p>
-<pre class="sv"><code><span class="k">#include</span> "svdpi.h"
+<pre class="cc"><code><span class="k">#include</span> "svdpi.h"
 <span class="k">#include</span> "Vtop__Dpi.h"   <span class="c">/* generated prototypes: a signature mismatch is a compile error */</span>
 
 <span class="k">static</span> uint32_t crc_tab[256];
@@ -216,7 +193,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 <li><b>Contract violations abort; mismatches do not.</b> A <code>len</code> larger than the buffer is a testbench bug, so <code>crc32_msg</code> prints the reason and calls <code>abort()</code>. A DUT that disagrees with the model is a <em>result</em>, so the model returns its prediction and the scoreboard decides. <a href="#ex12">Exercise 12</a> shows the abort: <code>crc32_msg: len=300 outside buffer of 256</code> and exit code 134 (SIGABRT).</li>
 </ul>
 <p>The FIR model is just as small. The accumulator is 64-bit, so the 35-bit sum can never overflow, and C's <code>&gt;&gt;</code> on a negative signed value is an arithmetic shift on every compiler you will meet. That shift is implementation-defined in C++17 and only guaranteed in C++20, but it matches SV's <code>&gt;&gt;&gt;</code>, which is floor division by a power of two.</p>
-<pre class="sv"><code><span class="k">typedef struct</span> { int16_t coef[8]; int16_t dly[8]; } fir_t;   <span class="c">/* dly[0] = x[n-1] */</span>
+<pre class="cc"><code><span class="k">typedef struct</span> { int16_t coef[8]; int16_t dly[8]; } fir_t;   <span class="c">/* dly[0] = x[n-1] */</span>
 
 <span class="k">static</span> int16_t fir_q15(<span class="k">const</span> fir_t* f, int16_t x) {
   int64_t acc = (int64_t)f-&gt;coef[0] * x;
@@ -413,7 +390,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 <!-- 0.10 -->
 <h3 id="t-swap"><span class="no">0.10</span>Swapping the implementation</h3>
 <p>The contract in 0.3 pays off here. <code>lab/ex/golden_cpp.cpp</code> implements the same nine symbols with two C++ classes, <code>Crc32</code> and <code>Fir8</code>. Each <code>chandle</code> is a <code>new</code>'d object; each import is a one-line wrapper that casts the handle and calls a method. This is Spear's §12.3 static-wrapper pattern (Samples 12.14 and 12.16), minus the hand-written <code>extern "C"</code> block: including <code>Vtop__Dpi.h</code> gives every definition C linkage, because a function first declared <code>extern "C"</code> keeps that linkage.</p>
-<pre class="sv"><code><span class="k">void</span>* fir8_new(<span class="k">const short</span>* coef) { <span class="k">return new</span> Fir8(coef); }
+<pre class="cc"><code><span class="k">void</span>* fir8_new(<span class="k">const short</span>* coef) { <span class="k">return new</span> Fir8(coef); }
 <span class="k">void</span>  fir8_free(<span class="k">void</span>* h) { <span class="k">delete static_cast</span>&lt;Fir8*&gt;(h); }
 <span class="k">short</span> fir8_step(<span class="k">void</span>* h, <span class="k">short</span> x) { <span class="k">return static_cast</span>&lt;Fir8*&gt;(h)-&gt;step(x); }</code></pre>
 <p>The run script builds the FIR testbench twice from the same SV, once with <code>golden.c</code> and once with <code>ex/golden_cpp.cpp</code>, and runs both with <code>+SEED=3 +FAST +N=20000</code>. Both print digest <code>ca87667f</code> and <code>PASS fir8</code>. Nothing on the SV side knew which one it got.</p>
@@ -472,7 +449,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 <div class="q" id="ex3">
 <p><span class="n">E3 ★★</span><b>Ex. 12.1 + 12.2, as golden models.</b> Write <code>shift_c(i, n)</code>: shift a 32-bit unsigned value left by <code>n</code> if positive, right by <code>-n</code> if negative, unchanged if 0. Then <code>shift_reg(i, n, ld)</code> with an internal register: if <code>ld</code>, load <code>i</code> shifted by <code>n</code>, otherwise shift the register. Check both against SV's own shift operators for <code>n</code> ∈ {0, 1, 4, 31, 32, 40, −1, −4, −31, −32, −40}.</p>
 <details><summary>Show solution</summary><div class="a">
-<pre class="sv"><code><span class="c">/* ex/shift.c (excerpt). C makes x &lt;&lt; 32 undefined behavior; SV defines it as 0. */</span>
+<pre class="cc"><code><span class="c">/* ex/shift.c (excerpt). C makes x &lt;&lt; 32 undefined behavior; SV defines it as 0. */</span>
 <span class="k">static</span> uint32_t sh(uint32_t i, <span class="k">int</span> n) {
   <span class="k">if</span> (n &gt;= 32 || n &lt;= -32) <span class="k">return</span> 0;
   <span class="k">return</span> n &gt; 0 ? i &lt;&lt; n : n &lt; 0 ? i &gt;&gt; -n : i;
@@ -503,7 +480,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <span class="k">return</span> *r;
 }</code></pre>
 <p>Lab output (addresses vary per run):</p>
-<pre class="sv"><code>LOG shift_inst inst=0x600003508030 i=00000000 n=1 ld=0 reg=00000002 calls=1
+<pre class="out"><code>LOG shift_inst inst=0x600003508030 i=00000000 n=1 ld=0 reg=00000002 calls=1
 LOG shift_inst inst=0x600003508040 i=00000000 n=-4 ld=0 reg=00000010 calls=2
 LOG shift_inst inst=0x600003508030 i=00000000 n=1 ld=0 reg=00000004 calls=3
 LOG shift_inst inst=0x600003508040 i=00000000 n=-4 ld=0 reg=00000001 calls=4</code></pre>
@@ -578,7 +555,7 @@ LOG shift_inst inst=0x600003508040 i=00000000 n=-4 ld=0 reg=00000001 calls=4</co
 <p><span class="n">E9 ★★★</span><b>Swap the implementation.</b> Implement the full <code>golden_pkg</code> contract with C++ classes (Spear §12.3), build the FIR testbench against it instead of <code>golden.c</code>, and show that the two runs are indistinguishable.</p>
 <details><summary>Show solution</summary><div class="a">
 <p><code>lab/ex/golden_cpp.cpp</code> (about 60 lines): class <code>Crc32</code> with a <code>static inline const std::array</code> table and a <code>push(byte)</code> method; class <code>Fir8</code> with <code>step(x)</code>; then one-line wrappers per import:</p>
-<pre class="sv"><code><span class="k">#include</span> "Vtop__Dpi.h"   <span class="c">// declares the imports extern "C"; the definitions below inherit it</span>
+<pre class="cc"><code><span class="k">#include</span> "Vtop__Dpi.h"   <span class="c">// declares the imports extern "C"; the definitions below inherit it</span>
 <span class="k">void</span>* crc32_new() { <span class="k">return new</span> Crc32; }
 <span class="k">void</span>  crc32_free(<span class="k">void</span>* h) { <span class="k">delete static_cast</span>&lt;Crc32*&gt;(h); }
 <span class="k">unsigned int</span> crc32_update(<span class="k">void</span>* h, <span class="k">unsigned char</span> b) { <span class="k">return static_cast</span>&lt;Crc32*&gt;(h)-&gt;push(b); }
@@ -798,7 +775,7 @@ python3 check.py --no-run     <span class="c"># re-check existing logs</span>
 <li>In Verilator, DPI into C costs nanoseconds: measure the solver and the TB first. Batch for Python, not for C.</li>
 </ol>
 
-<p class="foot">Spear &amp; Tumbush, <em>SystemVerilog for Verification</em>, 3rd ed. (Springer, 2012), ch. 1 (§1.9–1.11) and ch. 12 (§12.2–12.4, Ex. 12.1–12.5); IEEE Std 1800-2023 §35 and Annex H. DUTs: <code>tutorial/common/rtl</code>. Every number on this page comes from <code>06_golden_model_c/lab/check.py</code> (Verilator 5.052, macOS x86_64); timings vary with machine load.</p>
+<p class="foot">Spear &amp; Tumbush, <em>SystemVerilog for Verification</em>, 3rd ed. (Springer, 2012), ch. 1 (§1.9–1.11) and ch. 12 (§12.2–12.4, Ex. 12.1–12.5); IEEE Std 1800-2023 §35.5.6.1, §35.6.1, H.12. DUTs: <code>tutorial/common/rtl</code>. Every number on this page comes from <code>06_golden_model_c/lab/check.py</code> (Verilator 5.052, macOS x86_64); timings vary with machine load.</p>
 </main>
 </div>
 </body>

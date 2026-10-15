@@ -19,6 +19,14 @@ vlb pkg       pkg.sv pkg.c
 vlb comb      comb.sv pure.c
 vlb ref       ref.sv
 wait
+# LRM rules for pure and for shared C names (35.5.2, 35.4, 35.5.4)
+vlb pr_out    pure_rules.sv pure_rules.c
+vlb pr_void   pure_rules.sv pure_rules.c -DVOID
+vlb pr_task   pure_rules.sv pure_rules.c -DTASK
+vlb cid       cid.sv cid.c
+vlb cid_bad   cid.sv cid.c -DBAD
+wait
+for n in pr_out pr_void pr_task cid; do vlr $n $n; done
 vlr hello    hello
 vlr hdr      hdr
 vlr mismatch mismatch

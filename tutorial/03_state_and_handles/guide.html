@@ -10,29 +10,8 @@
 <script defer src="../assets/katex/katex.min.js"></script>
 <script defer src="../assets/katex/contrib/auto-render.min.js"></script>
 <script defer src="../assets/quiz.js"></script>
-<script>
-try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
-document.addEventListener('DOMContentLoaded',function(){
-  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
-  var toc=document.getElementById('toc');
-  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
-  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
-  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
-  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
-  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
-});
-function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
-function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
-</script>
-<style>
-pre.sv{font-size:13px;line-height:1.5}
-pre.sv .c{color:var(--muted);font-style:italic}
-pre.sv .k{color:var(--acc);font-weight:600}
-pre.out{font-size:12.5px;line-height:1.45}
-p code,li code,td code{overflow-wrap:anywhere}
-td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
-.nav-steps{display:flex;justify-content:space-between;gap:12px;font-family:var(--font-mono);font-size:12.5px;margin-top:6px}
-</style>
+<script>try{var t=localStorage.getItem('dpic-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<script defer src="../assets/guide.js"></script>
 </head>
 <body>
 <svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
@@ -68,8 +47,6 @@ td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
 </ol></nav></details>
 
 <main>
-<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
-<div class="nav-steps"><a href="../02_data_types/guide.html">← 02 Data types</a><a href="../04_arrays_structs_strings/guide.html">04 Arrays, structs, strings →</a></div>
 <p class="kicker">DPI-C tutorial · Part A · Step 03 · Spear &amp; Tumbush §12.2–12.3</p>
 <h1>State and handles: C and C++ models that remember</h1>
 <p class="deck">A reference model is not a pure function: it has registers, memories and queues that survive between calls. This step is about <em>where</em> that state lives, <em>who</em> owns it, and how SystemVerilog points at it, with a <code>chandle</code>, without ever looking inside.</p>
@@ -94,7 +71,7 @@ td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
 <!-- 0.2 -->
 <h3 id="r-static"><span class="no">0.2</span>State in a C static (Sample 12.7)</h3>
 <p>The first version is the one everybody writes before thinking about simulation: the count is a <code>static</code> local of the function.</p>
-<pre class="sv"><code><span class="c">// lab/static_counter.c  (Sample 12.7, corrected)</span>
+<pre class="cc"><code><span class="c">// lab/static_counter.c  (Sample 12.7, corrected)</span>
 <span class="k">#include</span> "svdpi.h"
 
 <span class="k">extern</span> "C" <span class="k">void</span> counter7(svBitVecVal* o, <span class="k">const</span> svBitVecVal* i,
@@ -190,7 +167,7 @@ LOG static t=70 inst=top.u1 out=124</code></pre>
 <!-- 0.5 -->
 <h3 id="r-instance"><span class="no">0.5</span>Per-instance state (Samples 12.9 and 12.10)</h3>
 <p>The pattern is the C version of a constructor: a <code>_new</code> function allocates one state object and returns its address as the chandle; every other function takes the chandle as its first argument. Add a <code>_free</code> and a live-object counter and you have a model you can test for leaks.</p>
-<pre class="sv"><code><span class="c">// lab/chandle_counter.c  (Sample 12.9, corrected)</span>
+<pre class="cc"><code><span class="c">// lab/chandle_counter.c  (Sample 12.9, corrected)</span>
 <span class="k">typedef</span> <span class="k">struct</span> { <span class="k">unsigned</span> <span class="k">char</span> cnt; } c7;     <span class="c">// the state of ONE counter instance</span>
 <span class="k">static</span> <span class="k">int</span> live = 0;                          <span class="c">// how many c7 objects exist (leak detector)</span>
 
@@ -310,7 +287,7 @@ int   counter7(c7* inst, svBitVecVal* count, const svBitVecVal* i,   // &lt;- c7
 <!-- 0.8 -->
 <h3 id="r-cpp"><span class="no">0.8</span>C++ behind a C ABI (Samples 12.13 and 12.14)</h3>
 <p>Most real models are C++: a class with private state and methods. The DPI cannot call a method directly. A method needs an object (<code>this</code>), and objects don't exist at link time, while DPI resolves imports by symbol name at link time (§12.3.2). The solution is the same as for C: one free function per method, with C linkage, taking the object pointer as the first argument.</p>
-<pre class="sv"><code><span class="c">// lab/counter7.cpp  (Samples 12.13 + 12.14)</span>
+<pre class="cc"><code><span class="c">// lab/counter7.cpp  (Samples 12.13 + 12.14)</span>
 <span class="k">class</span> Counter7 {
  <span class="k">public</span>:
   <span class="k">static</span> <span class="k">int</span> live;                                     <span class="c">// objects alive right now</span>
@@ -360,6 +337,11 @@ int   counter7(c7* inst, svBitVecVal* count, const svBitVecVal* i,   // &lt;- c7
 ld: symbol(s) not found for architecture x86_64
 clang: error: linker command failed with exit code 1 (use -v to see invocation)</code></pre>
 <div class="callout note" style="--c-label:'The header helps here too'"><p>Including <code>Vtop__Dpi.h</code> also fixes this one. The header wraps its prototypes in <code>extern "C" { … }</code>, and in C++ a later definition with the same signature inherits the linkage of the earlier declaration. The lab proves it: the same <code>nocxx.cpp</code> built with <code>-DCHECK_PROTO</code> (which includes the header) links and prints the correct counts. Keep both safety nets anyway: the include, and an explicit <code>extern "C"</code> block around your wrappers.</p></div>
+<p><b>Exceptions stop at the wrapper.</b> §35.5.1.6 allows C++ behind DPI "as long as C linkage conventions are observed at the language boundary", and adds that exceptions shall not propagate out of an imported subroutine: if one crosses into SystemVerilog the behavior is undefined. The simulator's caller is C-shaped and cannot catch anything. The lab (<code>exc.sv</code>, <code>exc.cpp</code>) throws <code>std::runtime_error</code> from a model method:</p>
+<pre class="out"><code>LOG exc before r=10
+libc++abi: terminating due to uncaught exception of type std::runtime_error: model_step: bad input
+RUN_RC=134                     <span class="c"># abort: the rest of the test and every final block are gone</span></code></pre>
+<div class="callout trap"><p>An uncaught exception is not an error message, it is <code>abort()</code>: no <code>$error</code>, no scoreboard summary, no <code>final</code> blocks, no flushed coverage. Every <code>extern "C"</code> wrapper around C++ (or around any library that throws, including the C++ STL: <code>std::vector::at</code>, <code>std::stoi</code>, <code>new</code>) catches everything and turns it into a return code. With <code>try { … } catch (const std::exception&amp; e) { …; return -1; }</code> in the wrapper (<code>-DSAFE</code>), the same test prints <code>C++ error: model_step: bad input</code>, continues with <code>LOG exc after r=-1</code> and runs its <code>final</code> block. Report the failure to SV with the return value or an exported error function (<a href="../05_export_and_context/guide.html">step 05</a>). The same rule applies to <code>setjmp</code>/<code>longjmp</code> across an export (§35.5.3).</p></div>
 
 <!-- 0.9 -->
 <h3 id="r-tlm"><span class="no">0.9</span>Transaction-level models (Samples 12.15–12.17)</h3>
@@ -517,7 +499,7 @@ b = bump(1);           <span class="c">// same argument: may be merged with the 
 <div class="q">
 <p><span class="n">T1 ★</span><b>Ex. 12.2.</b> Write <code>shift_c(i, n, ld)</code> in C: when <code>ld</code> is 1, shift <code>i</code> by <code>n</code> (left if <code>n</code> &gt; 0, right if negative) and load it into an internal 32-bit register; when <code>ld</code> is 0, shift the register itself. Return the register. Test it from SV, including a shift by 40.</p>
 <details><summary>Show solution</summary><div class="a">
-<pre class="sv"><code><span class="c">// lab/ex/shift_static.c</span>
+<pre class="cc"><code><span class="c">// lab/ex/shift_static.c</span>
 <span class="k">static</span> <span class="k">uint32_t</span> shift(<span class="k">uint32_t</span> v, <span class="k">int</span> n) {
   <span class="k">if</span> (n &gt;= 32 || n &lt;= -32) <span class="k">return</span> 0;           <span class="c">// C: shifting by &gt;= width is undefined behavior</span>
   <span class="k">return</span> n &gt;= 0 ? v &lt;&lt; n : v &gt;&gt; -n;
@@ -537,7 +519,7 @@ b = bump(1);           <span class="c">// same argument: may be merged with the 
 <div class="q">
 <p><span class="n">T2 ★★</span><b>Ex. 12.3.</b> Make the shifter multi-instance. Each instance needs a unique identifier: use the address of its storage, and print it with every call. Instantiate it twice and call each instance twice.</p>
 <details><summary>Show solution</summary><div class="a">
-<pre class="sv"><code><span class="c">// lab/ex/shift.c (excerpt)</span>
+<pre class="cc"><code><span class="c">// lab/ex/shift.c (excerpt)</span>
 <span class="k">typedef</span> <span class="k">struct</span> { <span class="k">uint32_t</span> reg; <span class="k">int</span> calls; } shifter;
 <span class="k">extern</span> "C" {
 <span class="k">void</span>* shift_new(<span class="k">uint32_t</span> init) { shifter* s = (shifter*)calloc(1, <span class="k">sizeof</span> *s); s-&gt;reg = init; <span class="k">return</span> s; }
@@ -605,7 +587,7 @@ LOG ex3 addr=0x6000028d4080 i=00000000 n=-1 ld=0 reg=04000000</code></pre>
 <div class="q">
 <p><span class="n">T8 ★★</span><b>Write.</b> The <code>Counter7</code> SV class of 0.9 shares its C++ object on <code>new c1</code>. Add a <code>copy()</code> method that returns an independent counter with the same value, and show that freeing the original leaves the copy intact.</p>
 <details><summary>Show solution</summary><div class="a">
-<pre class="sv"><code><span class="c">// lab/ex/clone.cpp (excerpt): C++ copy constructor + one more wrapper</span>
+<pre class="cc"><code><span class="c">// lab/ex/clone.cpp (excerpt): C++ copy constructor + one more wrapper</span>
 Counter7(<span class="k">const</span> Counter7&amp; o) : cnt(o.cnt) { live++; }
 <span class="k">extern</span> "C" <span class="k">void</span>* counter7_clone(<span class="k">void</span>* inst) { <span class="k">return</span> <span class="k">new</span> Counter7(*obj(inst)); }</code></pre>
 <pre class="sv"><code><span class="c">// lab/ex/clone.sv (excerpt)</span>
@@ -627,7 +609,7 @@ Counter7(<span class="k">const</span> Counter7&amp; o) : cnt(o.cnt) { live++; }
 <div class="q">
 <p><span class="n">T9 ★★★</span><b>Design.</b> Write a reference model of a bounded FIFO in C++ (<code>std::deque</code>) behind a chandle, with <code>push</code> returning 0 when full and <code>pop</code> returning 0 when empty (the value comes back through an <code>output</code>). Check two independent instances against SV queues for 2000 random operations.</p>
 <details><summary>Show solution</summary><div class="a">
-<pre class="sv"><code><span class="c">// lab/ex/fifo_model.cpp</span>
+<pre class="cc"><code><span class="c">// lab/ex/fifo_model.cpp</span>
 <span class="k">struct</span> Fifo { <span class="k">std</span>::deque&lt;<span class="k">uint32_t</span>&gt; q; <span class="k">int</span> depth; };
 <span class="k">static</span> Fifo* F(<span class="k">void</span>* p) { <span class="k">return</span> static_cast&lt;Fifo*&gt;(p); }
 <span class="k">extern</span> "C" {
@@ -648,7 +630,7 @@ Counter7(<span class="k">const</span> Counter7&amp; o) : cnt(o.cnt) { live++; }
 <div class="q">
 <p><span class="n">T10 ★★★</span><b>Design.</b> Keep per-instance state without passing a chandle: each module instance identifies itself by its hierarchical name. Implement an accumulator <code>acc_by_name(who, x)</code> and instantiate three accumulators with steps 1, 10 and 100. What does this cost compared with a chandle?</p>
 <details><summary>Show solution</summary><div class="a">
-<pre class="sv"><code><span class="c">// lab/ex/registry.cpp</span>
+<pre class="cc"><code><span class="c">// lab/ex/registry.cpp</span>
 <span class="k">static</span> <span class="k">std</span>::map&lt;<span class="k">std</span>::<span class="k">string</span>, <span class="k">int</span>&gt; state;
 <span class="k">extern</span> "C" <span class="k">int</span> acc_by_name(<span class="k">const</span> <span class="k">char</span>* who, <span class="k">int</span> x) { <span class="k">return</span> state[who] += x; }   <span class="c">// creates on first use</span></code></pre>
 <pre class="sv"><code><span class="k">module</span> accum #(<span class="k">parameter</span> <span class="k">int</span> STEP = 1) (<span class="k">input</span> <span class="k">bit</span> clk);
@@ -792,7 +774,7 @@ Counter7(<span class="k">const</span> Counter7&amp; o) : cnt(o.cnt) { live++; }
 <h2 id="s4"><span class="no">§4 · Lab</span>Static vs instance state, handles, C++ wrappers, leaks, threads</h2>
 <h4>Run it</h4>
 <pre class="out"><code>cd tutorial/03_state_and_handles/lab
-python3 check.py              # builds ~22 models with Verilator, runs them, asserts 47 facts (~15 s with ccache, ~1 min cold)
+python3 check.py              # builds ~22 models with Verilator, runs them, asserts 50 facts (~15 s with ccache, ~1 min cold)
 python3 check.py --no-run     # re-check the logs in build/ without rebuilding</code></pre>
 <p>One <code>Segmentation fault: 11</code> line on stderr during <code>run.sh</code> is expected: it is the <code>booksig_null</code> experiment (0.6). Logs are in <code>build/&lt;name&gt;.log</code>, build output in <code>build/&lt;name&gt;.build</code>, and each model's generated <code>Vtop__Dpi.h</code> in <code>build/vl_&lt;name&gt;/</code>.</p>
 <h4>Predict first</h4>
@@ -813,6 +795,7 @@ python3 check.py --no-run     # re-check the logs in build/ without rebuilding</
 <tr><td class="mono">chandle_null / booksig_null</td><td><code>+null</code></td><td>null chandle with / without guard</td><td>−1 and continues / SIGSEGV, exit 139</td></tr>
 <tr><td class="mono">booksig / booksigh</td><td><code>book_sig.c</code> ± <code>-DCHECK_PROTO</code></td><td><code>c7*</code> vs <code>void*</code></td><td>links and runs / <code>conflicting types for 'counter7'</code></td></tr>
 <tr><td class="mono">nocxx / nocxxh</td><td><code>nocxx.cpp</code> ± header</td><td>missing <code>extern "C"</code></td><td>link error <code>"_counter7_new"</code> / links (header gives C linkage)</td></tr>
+<tr><td class="mono">exc_*</td><td><code>exc.sv/.cpp</code></td><td>C++ exception across the boundary (§35.5.1.6), and caught in the wrapper (<code>-DSAFE</code>)</td><td>abort, RUN_RC=134, no final · safe: r=-1, final runs</td></tr>
 <tr><td class="mono">tlm</td><td><code>tlm.sv/.cpp</code></td><td>Samples 12.15–12.17, shallow copy, leak, dangling</td><td>get 0 · shallow live 1 · leak live 101 · after free c2 dangling</td></tr>
 <tr><td class="mono">pure / honest</td><td><code>pure_lie.sv</code>, <code>pure_honest.sv</code></td><td>stateful function imported as pure</td><td>13 calls in both</td></tr>
 <tr><td class="mono">thr1 / thr2 / thr2none / thr2all</td><td><code>threads.sv/.cpp</code></td><td>OS threads per import</td><td>pure: 1 / 2 / 1 / 2 · non-pure: 1 / 1 / 1 / 1</td></tr>
@@ -853,7 +836,7 @@ python3 check.py --no-run     # re-check the logs in build/ without rebuilding</
 <li>Stateful ⇒ not <code>pure</code>. <code>pure</code> in Verilator also means "may run on any thread".</li>
 </ol>
 
-<p class="foot">Spear &amp; Tumbush, <i>SystemVerilog for Verification</i>, 3rd ed. (Springer, 2012), §12.2–12.3 and Ex. 12.2–12.6; IEEE 1800-2023 §6.14 (chandle), §35 (DPI), Annex H; Verilator manual, <code>--threads-dpi</code>. Lab: Verilator 5.052, Apple clang, macOS x86_64. Every output in this page comes from <code>03_state_and_handles/lab</code> and is asserted by <code>check.py</code>.</p>
+<p class="foot">Spear &amp; Tumbush, <i>SystemVerilog for Verification</i>, 3rd ed. (Springer, 2012), §12.2–12.3 and Ex. 12.2–12.6; IEEE 1800-2023 §6.14 (chandle), §35.5.1.4 and §35.5.1.6 (memory, C++), §35.5.2 (pure), H.6.6 and H.9.3; Verilator manual, <code>--threads-dpi</code>. Lab: Verilator 5.052, Apple clang, macOS x86_64. Every output in this page comes from <code>03_state_and_handles/lab</code> and is asserted by <code>check.py</code>.</p>
 </main>
 </div>
 </body>

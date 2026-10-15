@@ -118,6 +118,9 @@ ok("extern void f(const char** a);" in proto("a_ostring"), "output string -> con
 ok("extern void f(int* a);" in proto("a_ref") and "Error" not in proto("a_ref"), "ref accepted silently")
 ok("extern void f(double a, double* b);" in proto("a_sreal"), "shortreal args -> double")
 
+# svDpiVersion (H.10.1.3): the canonical representation of IEEE 1800-2005 and later
+ok(kv(log("ver.log"), "ver") == {"dpi": "1800-2005"}, "svDpiVersion")
+
 # 6) exercise solutions
 for n in ("ex_shift", "ex_popcount", "ex_sext", "ex_partsel", "ex_isneg", "ex_isneg_u", "ex_mul128"):
     ok(re.search(r"^PASS$", log(f"{n}.log"), re.M), f"{n} PASS")

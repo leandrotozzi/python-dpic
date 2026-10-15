@@ -101,6 +101,17 @@ ok([(d["mem"], d["data"], d["t"]) for d in logs(s, "c")] == [("1", "0", "50"), (
    "pull model: reads at 50/70/90 ns")
 ok("LOG pull errs=1 t=90" in s and int(logs(s, "pull")[0]["ticks"]) >= 89, "pull: 3x10+3x20 ns, TB kept running")
 
+# --- time API (H.13): sim time in precision units; type field and scope ignored, real never written
+tl = {d["tag"]: d for d in logs(log("svtime"), "svtime")}
+ok(tl["t25"]["rc"] == "000" and tl["t25"]["sim"] == "25000" and tl["t26_5"]["sim"] == "26500", "sim time in ps")
+ok(tl["t25"]["scaled_low"] == "25000" and tl["t25"]["scaled_real"] == "-1", "vpiScaledRealTime: real not written")
+ok(tl["t25"]["unit"] == "-9" and tl["t25"]["prec"] == "-12" and tl["t25"]["gunit"] == "-9", "units of top")
+ok(tl["sub30ns"]["sim"] == "30000" and tl["sub30ns"]["unit"] == "-9" and tl["sub30ns"]["scaled_real"] == "-1",
+   "sub (timeunit 1us): delay honored, but svGetTimeUnit says -9 (LRM: -6)")
+# --- export restrictions and shared C names
+ok("internal fault" in build("xdyn") and "BUILD_FAIL" in build("xdyn"), "dynamic-array formal on export: verilator crashes")
+ok([d["who"] for d in logs(log("xshared"), "xshared")] == ["top.u1.hello", "top.u2.hello"], "one C name, two exports")
+
 # --- exercises
 ok([(d["n"], d["o"]) for d in logs(log("ex12_8"), "ex8")] ==
    [("4", "00000f00"), ("-4", "0800000f"), ("0", "800000f0"), ("40", "00000000"), ("-31", "00000001")], "Ex. 12.8")
