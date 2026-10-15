@@ -58,7 +58,7 @@ ok(abs(c_sreal - 0.1) > 0.01, "float-declared C function reads garbage")
 fx = log("types_fix.log")
 ok(kv(fx, "c_sreal") == {"v": "0.10000000000000001"} and kv(fx, "sreal") == {"v": "0.10000000000000001"},
    "double on the C side: exact 0.1 (no float rounding)")
-ok("functions that differ only in their return type cannot be overloaded" in log("types_hdr.build"),
+ok(any(m in log("types_hdr.build") for m in ("differ only in their return type cannot be overloaded", "conflicting types for")),
    "including Vtop__Dpi.h turns the mismatch into a compile error")
 ok("Unsupported tristate construct: ARG" in log("zlit.build"), "1'bz literal argument rejected")
 

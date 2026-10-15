@@ -132,6 +132,7 @@ int c_isneg(char b) { return (signed char)b &lt; 0; }   <span class="c">/* or: i
 C declared double:   LOG c_sreal v=0.10000000000000001         LOG sreal v=0.10000000000000001</code></pre>
 <p>On x86-64 both <code>float</code> and <code>double</code> arguments travel in <code>xmm0</code>; the callee reads the low 32 bits of a double as a float and gets noise, and the caller reads a float's bits as a double and gets a denormal. Nothing crashes. Including the generated header turns this into a compile error (lab build <code>types_hdr</code>):</p>
 <pre class="sh"><code>../../types.c:37:9: error: functions that differ only in their return type cannot be overloaded</code></pre>
+<p class="muted">Newer clang (16+) words the same error as <code>error: conflicting types for 'rt_sreal'</code>.</p>
 <p>Note also the second line of the "double" run: the value is exactly the double 0.1, not the float 0.1 (<code>0.100000001490116…</code>). On Verilator a <code>shortreal</code> model never sees single-precision rounding, so a bit-exact float golden model cannot be checked through <code>shortreal</code> here.</p>
 <div class="callout trap"><p>Portable rule: do not use <code>shortreal</code> in DPI signatures. If the model is single precision, pass <code>real</code> (double) or the raw 32-bit pattern as <code>int unsigned</code> and convert with <code>memcpy</code> in C and <code>$bitstoshortreal</code> in SV.</p></div>
 

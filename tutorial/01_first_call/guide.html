@@ -272,6 +272,7 @@ ld: symbol(s) not found for architecture x86_64</code></pre>
 </figure>
 <p><b>With the header.</b> <code>mismatch_hdr.c</code> adds <code>#include "Vtop__Dpi.h"</code> and keeps the wrong definition inside <code>extern "C"</code>:</p>
 <pre class="sh"><code>../../mismatch_hdr.c:3:16: error: functions that differ only in their return type cannot be overloaded</code></pre>
+<p class="muted">Newer clang (16+) words the same error as <code>error: conflicting types for 'negate'</code>.</p>
 <div class="callout trap"><p><b>The header only checks what has C linkage.</b> <code>mismatch_hdr2.c</code> includes the header but defines <code>int negate(int v)</code> <em>outside</em> <code>extern "C"</code>. The parameter type differs from the header's <code>long long negate(long long)</code>, so C++ sees a <b>new overload</b>, compiles it with a mangled name, and the build fails only at link time: <code>Undefined symbols … "_negate"</code>. So: include the header <em>and</em> make the definitions match it. Copy the prototype from the header, never retype it.</p></div>
 
 <!-- 0.7 -->

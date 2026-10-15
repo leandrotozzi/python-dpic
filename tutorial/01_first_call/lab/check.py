@@ -20,6 +20,9 @@ def kv(text, prefix):
     return dict(re.findall(r"(\S+?)=(\S+)", m[1]))
 
 n_ok = 0
+def clash(t):  # Apple clang 15 vs newer clang wording of the same compile error
+    return "differ only in their return type cannot be overloaded" in t or "conflicting types for" in t
+
 def ok(cond, msg):
     global n_ok
     assert cond, msg
@@ -62,13 +65,13 @@ ok("Undefined symbols" in read("ex12.build") and '"_factorial"' in read("ex12.bu
 ok(kv(read("mismatch.log"), "mismatch") == {"v": "4294967301", "negate": "4294967291", "expected": "-4294967301"},
    "SV longint vs C int: C sees low 32 bits (5), returns -5 zero-extended")
 mh = read("mmhdr.build")
-ok("functions that differ only in their return type cannot be overloaded" in mh, "header turns mismatch into compile error")
+ok(clash(mh), "header turns mismatch into compile error")
 mh2 = read("mmhdr2.build")
 ok('"_negate", referenced from' in mh2 and "BUILD_FAIL" in mh2, "header without extern C: C++ overload, link error")
 ok("syntax error, unexpected expect" in read("keyword.build"), "expect is a keyword")
 ok("Unsupported DPI type 'DPI': Use 'DPI-C'" in read("legacy.build"), "\"DPI\" unsupported in Verilator")
 ok("Duplicate declaration of DPI function with different signature: 'twice'" in read("dup.build"), "dup signature")
-ok("functions that differ only in their return type cannot be overloaded" in read("ex5.build")
+ok(clash(read("ex5.build"))
    and "size_t   strlen" in read("ex5.build"), "strlen direct import collides with <string.h>")
 
 # 4) pure: Verilator 5.052 still calls every time (the LRM would allow skipping)
