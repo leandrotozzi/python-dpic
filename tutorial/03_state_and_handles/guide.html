@@ -1,0 +1,860 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DPI-C 03: State and handles</title>
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../assets/guide.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/contrib/auto-render.min.js"></script>
+<script defer src="../assets/quiz.js"></script>
+<script>
+try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
+document.addEventListener('DOMContentLoaded',function(){
+  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
+  var toc=document.getElementById('toc');
+  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
+  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
+  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
+  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
+});
+function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
+function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
+</script>
+<style>
+pre.sv{font-size:13px;line-height:1.5}
+pre.sv .c{color:var(--muted);font-style:italic}
+pre.sv .k{color:var(--acc);font-weight:600}
+pre.out{font-size:12.5px;line-height:1.45}
+p code,li code,td code{overflow-wrap:anywhere}
+td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
+.nav-steps{display:flex;justify-content:space-between;gap:12px;font-family:var(--font-mono);font-size:12.5px;margin-top:6px}
+</style>
+</head>
+<body>
+<svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-acc" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-2" d="M0,1 L10,5 L0,9 z"/></marker>
+</defs></svg>
+
+<div class="page">
+<details class="toc" id="toc"><summary>Contents</summary><nav><ol>
+<li class="grp">0 · Tutorial</li>
+<li><a href="#tutorial">The step in one idea</a></li>
+<li><a href="#r-memory">0.1 Models have memory</a></li>
+<li><a href="#r-static">0.2 State in a C static</a></li>
+<li><a href="#r-twice">0.3 Instantiate it twice</a></li>
+<li><a href="#r-chandle">0.4 The chandle type</a></li>
+<li><a href="#r-instance">0.5 Per-instance state</a></li>
+<li><a href="#r-null">0.6 Null chandles</a></li>
+<li><a href="#r-proto">0.7 The prototype header</a></li>
+<li><a href="#r-cpp">0.8 C++ behind a C ABI</a></li>
+<li><a href="#r-tlm">0.9 Transaction-level models</a></li>
+<li><a href="#r-life">0.10 Lifetime and leaks</a></li>
+<li><a href="#r-homes">0.11 Four homes for state</a></li>
+<li><a href="#r-pure">0.12 pure and hidden state</a></li>
+<li><a href="#r-threads">0.13 Threads</a></li>
+<li><a href="#r-recipe">0.14 Recipe</a></li>
+<li class="grp">Practice</li>
+<li><a href="#s1">1 · Objectives</a></li>
+<li><a href="#s2">2 · Exercises</a></li>
+<li><a href="#s3">3 · Quiz</a></li>
+<li><a href="#s4">4 · Lab</a></li>
+<li><a href="#s5">5 · Cheat sheet</a></li>
+</ol></nav></details>
+
+<main>
+<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
+<div class="nav-steps"><a href="../02_data_types/guide.html">← 02 Data types</a><a href="../04_arrays_structs_strings/guide.html">04 Arrays, structs, strings →</a></div>
+<p class="kicker">DPI-C tutorial · Part A · Step 03 · Spear &amp; Tumbush §12.2–12.3</p>
+<h1>State and handles: C and C++ models that remember</h1>
+<p class="deck">A reference model is not a pure function: it has registers, memories and queues that survive between calls. This step is about <em>where</em> that state lives, <em>who</em> owns it, and how SystemVerilog points at it, with a <code>chandle</code>, without ever looking inside.</p>
+<p class="meta"><span>Prereqs: <a href="../01_first_call/guide.html">01</a>, <a href="../02_data_types/guide.html">02</a></span><span>Book pages: Spear &amp; Tumbush 3rd ed. pp. 419–431 (PDF = book + 36)</span><span>Answers are hidden: think first</span></p>
+<div class="tools"><button onclick="setAll(true)">Open all</button><button onclick="setAll(false)">Close all</button></div>
+
+<h2 id="tutorial"><span class="no">§0 · Tutorial</span>The step, explained</h2>
+<p class="lead">Steps 01 and 02 called C functions that behaved like combinational logic: same inputs, same output, nothing remembered. Real models are sequential. A CPU model has a register file, a DMA model has descriptors in flight, a golden FIR has a delay line. The moment a C function keeps something between calls, three questions appear that the DPI standard does not answer for you: where does the state live, how many copies of it exist, and who frees it.</p>
+<p>Spear's chapter 12 walks through the answer with a deliberately tiny model, a 7-bit counter with reset and load, written four ways: with a C <code>static</code> (Sample 12.7), with per-instance storage reached through a <code>chandle</code> (Sample 12.9), as a C++ class behind static wrappers (Samples 12.13–12.14) and as a transaction-level C++ model wrapped in an SV class (Samples 12.15–12.17). This guide follows the same path, runs every version in Verilator 5.052, and adds what the book leaves out: what really happens with two instances, how a null or dangling handle fails, how the generated prototype header catches a type mismatch, what leaks and why, and which thread calls your model when Verilator runs multithreaded.</p>
+<p>Everything printed in this page comes from <a href="#s4">the lab</a>, and <code>lab/check.py</code> asserts it (43 checks).</p>
+
+<!-- 0.1 -->
+<h3 id="r-memory"><span class="no">0.1</span>Models have memory</h3>
+<p>From the simulator's point of view an imported DPI function is a plain C call: arguments go in, results come out, and the call returns before simulation time can advance (imported tasks can consume time only by calling exported SV tasks, see <a href="../05_export_and_context/guide.html">step 05</a>). Nothing in that contract keeps data alive between two calls. If your model needs memory, the C side has to put it somewhere that outlives the call frame. There are only three such places in a C program:</p>
+<ul>
+<li><b>static storage</b> (a <code>static</code> local or a global): one copy per process, created before <code>main</code>, never freed;</li>
+<li><b>the heap</b> (<code>malloc</code>/<code>new</code>): as many copies as you allocate, alive until you free them;</li>
+<li><b>someone else's storage</b>: the simulator's, reached through a handle it gives you (the SV variables passed as <code>output</code>/<code>inout</code>, or user data attached to a scope, step 05).</li>
+</ul>
+<p>The counter is the smallest model that exercises all the problems: it has inputs (<code>i</code>, <code>reset</code>, <code>load</code>), an output, internal state, and in a real testbench you want more than one of it. It is 7 bits wide on purpose, so the C <code>unsigned char</code> that holds it is wider than the hardware and the code must mask (§12.2).</p>
+
+<!-- 0.2 -->
+<h3 id="r-static"><span class="no">0.2</span>State in a C static (Sample 12.7)</h3>
+<p>The first version is the one everybody writes before thinking about simulation: the count is a <code>static</code> local of the function.</p>
+<pre class="sv"><code><span class="c">// lab/static_counter.c  (Sample 12.7, corrected)</span>
+<span class="k">#include</span> "svdpi.h"
+
+<span class="k">extern</span> "C" <span class="k">void</span> counter7(svBitVecVal* o, <span class="k">const</span> svBitVecVal* i,
+                         <span class="k">const</span> svBit reset, <span class="k">const</span> svBit load) {
+  <span class="k">static</span> <span class="k">unsigned</span> <span class="k">char</span> count = 0;   <span class="c">// one copy per process, shared by every caller</span>
+  <span class="k">if</span> (reset)     count = 0;
+  <span class="k">else</span> <span class="k">if</span> (load) count = *i;
+  <span class="k">else</span>           count++;
+  count &amp;= 0x7f;                    <span class="c">// 7-bit counter: mask the 8th bit of the char</span>
+  *o = count;
+}</code></pre>
+<p>Mapping, as in <a href="../02_data_types/guide.html">step 02</a>: <code>output bit [6:0]</code> arrives as <code>svBitVecVal*</code> (one 32-bit word, C writes through it), <code>input bit [6:0]</code> as <code>const svBitVecVal*</code>, and the scalar <code>input bit</code> flags as <code>svBit</code> (an <code>unsigned char</code> holding 0 or 1) passed by value. The <code>extern "C"</code> is not in the book: Verilator compiles <code>.c</code> files with the C++ compiler (the lab's build log shows clang's <code>treating 'c' input as 'c++'</code> warning), so without it the symbol would be mangled. We come back to that in <a href="#r-cpp">0.8</a>.</p>
+<div class="callout errata"><p>OCR and print aside, Sample 12.7 has two real defects for a 2026 reader: no <code>extern "C"</code> (fine for VCS 2012 compiling C, fatal in any flow that compiles it as C++), and the PLI call <code>io_printf</code> from <code>veriuser.h</code> in Sample 12.9, which Verilator does not provide. Use <code>printf</code> plus <code>fflush(stdout)</code>, or <code>vpi_printf</code> if you link VPI.</p></div>
+<p>With one caller this works perfectly. Sample 12.8 drives it from a single program and gets 0, 0 after reset, 126 after load, 127 after counting. The lab keeps that idea but turns the caller into a <em>module</em>, because that is how you would use it for real: one module wraps one model, and you instantiate the module wherever you need a counter.</p>
+<pre class="sv"><code><span class="c">// lab/static_counter.sv</span>
+<span class="k">import</span> "DPI-C" <span class="k">function</span> <span class="k">void</span> counter7(<span class="k">output</span> <span class="k">bit</span> [6:0] out, <span class="k">input</span> <span class="k">bit</span> [6:0] in,
+                                      <span class="k">input</span> <span class="k">bit</span> reset, load);
+
+<span class="k">module</span> cnt_static #(<span class="k">parameter</span> <span class="k">bit</span> [6:0] INIT = 0) (<span class="k">input</span> <span class="k">bit</span> clk, reset, load);
+  <span class="k">bit</span> [6:0] out;
+  <span class="k">always</span> @(posedge clk) <span class="k">begin</span>
+    counter7(out, INIT, reset, load);       <span class="c">// every instance calls the SAME C function</span>
+    $display("LOG <span class="k">static</span> t=%0t inst=%m out=%0d", $time, out);
+  <span class="k">end</span>
+<span class="k">endmodule</span>
+
+<span class="k">module</span> top;
+  <span class="k">bit</span> clk, reset, load;
+  <span class="k">always</span> #10 clk = ~clk;
+  cnt_static #(120) u1 (.*);                <span class="c">// book values: i1 = 120 ...</span>
+  cnt_static #(10)  u2 (.*);                <span class="c">// ... and i2 = 10</span>
+  <span class="k">initial</span> <span class="k">begin</span>
+    @(negedge clk) load = 1;                <span class="c">// both load at the next posedge</span>
+    @(negedge clk) load = 0;                <span class="c">// then both count</span>
+    <span class="k">repeat</span> (2) @(negedge clk);
+    $finish;
+  <span class="k">end</span>
+<span class="k">endmodule</span></code></pre>
+
+<!-- 0.3 -->
+<h3 id="r-twice"><span class="no">0.3</span>Instantiate it twice</h3>
+<p>Predict before reading on: two counters, u1 loads 120 and u2 loads 10 at <i>t</i> = 30, then both count. What should they print at <i>t</i> = 50 and 70? (121, 122 and 11, 12.) Here is what Verilator prints:</p>
+<pre class="out"><code>LOG static t=10 inst=top.u2 out=1
+LOG static t=10 inst=top.u1 out=2
+LOG static t=30 inst=top.u2 out=10
+LOG static t=30 inst=top.u1 out=120
+LOG static t=50 inst=top.u2 out=121
+LOG static t=50 inst=top.u1 out=122
+LOG static t=70 inst=top.u2 out=123
+LOG static t=70 inst=top.u1 out=124</code></pre>
+<p>There is only one <code>count</code> in the process. Every call from every instance reads and writes it, so each clock it advances by two, and each instance sees whatever the other one left. At <i>t</i> = 10 u2 runs first and gets 1, then u1 gets 2. At <i>t</i> = 30 both load: u2 writes 10 (and reads 10 back), then u1 overwrites it with 120. From then on u2 sees u1's value + 1.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 250" role="img" aria-label="Two module instances, u1 and u2, each with an always block that calls counter7. Both calls land on the same C function, which reads and writes one static variable count in the process's data segment. A timeline below shows count going 0, 1, 2 at t=10, then 10 and 120 at t=30, then 121 and 122 at t=50.">
+<rect class="ghost" x="10" y="10" width="280" height="160" rx="12"/><text class="ttl" x="24" y="32">SystemVerilog</text>
+<rect class="box" x="30" y="50" width="240" height="44" rx="8"/><text class="lbl" x="150" y="72">u1 : cnt_static #(120)</text>
+<rect class="box" x="30" y="110" width="240" height="44" rx="8"/><text class="lbl" x="150" y="132">u2 : cnt_static #(10)</text>
+<rect class="ghost" x="420" y="10" width="290" height="160" rx="12"/><text class="ttl" x="434" y="32">C (one process)</text>
+<rect class="box soft" x="440" y="50" width="250" height="44" rx="8"/><text class="lbl" x="565" y="72">counter7(o, i, reset, load)</text>
+<rect class="reg hot" x="500" y="114" width="130" height="40" rx="6"/><text class="lbl" x="565" y="134">static count</text>
+<path class="e" d="M270,72 H440" marker-end="url(#ah)"/>
+<path class="e" d="M270,132 C350,132 360,85 440,80" marker-end="url(#ah)"/>
+<path class="e hot" d="M565,94 V114" marker-end="url(#ah-acc)"/>
+<line class="grid" x1="40" y1="215" x2="700" y2="215"/>
+<text class="t" x="40" y="236">t=10</text><text class="t" x="270" y="236">t=30</text><text class="t" x="500" y="236">t=50</text>
+<text class="note" x="40" y="205">u2→1</text><text class="note" x="110" y="205">u1→2</text>
+<text class="note" x="270" y="205">u2→10</text><text class="note" x="350" y="205">u1→120</text>
+<text class="hotx" x="500" y="205">u2→121</text><text class="hotx" x="590" y="205">u1→122</text>
+</svg>
+<figcaption><b>Fig. 0.1</b>Static storage is per process, not per caller. Both module instances share one <code>count</code>; the second caller in each time step sees the first one's update. The bug is invisible on the load cycle (both values look right) and appears the first time both count.</figcaption>
+</figure>
+
+<div class="callout trap"><p><b>The load cycle hides the bug.</b> At <i>t</i> = 30 both instances print exactly what you expect, because each one <em>writes</em> the shared variable and immediately reads its own value back. A test that only checks "load then read" passes. You need two instances doing read-modify-write in the same time step to see the corruption.</p></div>
+<div class="callout note" style="--c-label:'Order is unspecified'"><p>Verilator 5.052 ran u2's <code>always</code> before u1's, the reverse of the declaration order. IEEE 1800 leaves the order of processes woken by the same event unspecified, so another simulator may run u1 first and print a different (equally wrong) sequence. A model whose output depends on that order is broken by definition. Static state shared across callers turns an "unspecified order" into a real race.</p></div>
+<p>When is a static fine? When there is genuinely one of the thing: a single golden model of the whole chip, a log file handle, a lookup table built once, a global statistic (Ex. 12.4 asks for a call counter across all instances: that one <em>should</em> be static). The rule is to make the sharing deliberate.</p>
+
+<!-- 0.4 -->
+<h3 id="r-chandle"><span class="no">0.4</span>The chandle type</h3>
+<p>To have one counter per instance, each caller must tell C <em>which</em> counter it means. The SV type designed for that is <code>chandle</code> (IEEE 1800-2023 §6.14, Spear §12.2.2): a variable wide enough to hold a C pointer on the host (64 bits on any machine you will use), whose content SV is not allowed to interpret. On the C side it is <code>void*</code>.</p>
+<div class="tbl"><table>
+<tr><th>Operation on a chandle (§6.14)</th><th>LRM</th><th>Verilator 5.052, <code>--lint-only -Wall</code></th></tr>
+<tr><td>Default value</td><td><code>null</code></td><td><code>null</code> (lab: <code>default_is_null=1</code>)</td></tr>
+<tr><td><code>h == null</code>, <code>h != g</code>, <code>if (h)</code>, assign chandle to chandle, pass to/return from DPI</td><td>legal</td><td>accepted</td></tr>
+<tr><td><code>int x = h;</code> (to another type)</td><td>illegal</td><td>only a <code>WIDTHTRUNC</code> warning (64 → 32 bits)</td></tr>
+<tr><td><code>g = h + 1;</code> (arithmetic)</td><td>illegal</td><td><b>accepted silently</b></td></tr>
+<tr><td><code>assign g = h;</code> (continuous assignment)</td><td>illegal</td><td><b>accepted silently</b></td></tr>
+<tr><td><code>always @(h)</code> (event expression)</td><td>illegal</td><td><b>accepted silently</b></td></tr>
+<tr><td>member of a packed struct/union</td><td>illegal</td><td>error</td></tr>
+<tr><td>port of a module, <code>rand</code>, untagged union</td><td>illegal</td><td>(not tested)</td></tr>
+</table></div>
+<div class="callout asic" style="--c-label:'In Verilator'"><p>Verilator models a chandle as a 64-bit integer (<code>QData</code>; the internal wrapper in the failed link of <a href="#r-cpp">0.8</a> is literally <code>Vdpiimwrap_counter7_free_TOP____024unit(unsigned long long)</code>). That is why it tolerates pointer arithmetic and continuous assignments. Code that relies on it will not compile on Questa, VCS or Xcelium. Treat a chandle as opaque: store it, compare it with <code>null</code>, pass it back to C. Nothing else.</p></div>
+
+<!-- 0.5 -->
+<h3 id="r-instance"><span class="no">0.5</span>Per-instance state (Samples 12.9 and 12.10)</h3>
+<p>The pattern is the C version of a constructor: a <code>_new</code> function allocates one state object and returns its address as the chandle; every other function takes the chandle as its first argument. Add a <code>_free</code> and a live-object counter and you have a model you can test for leaks.</p>
+<pre class="sv"><code><span class="c">// lab/chandle_counter.c  (Sample 12.9, corrected)</span>
+<span class="k">typedef</span> <span class="k">struct</span> { <span class="k">unsigned</span> <span class="k">char</span> cnt; } c7;     <span class="c">// the state of ONE counter instance</span>
+<span class="k">static</span> <span class="k">int</span> live = 0;                          <span class="c">// how many c7 objects exist (leak detector)</span>
+
+<span class="k">extern</span> "C" {
+<span class="k">void</span>* counter7_new(<span class="k">void</span>) {
+  c7* c = (c7*)malloc(<span class="k">sizeof</span>(c7));            <span class="c">// the cast is mandatory in C++</span>
+  c-&gt;cnt = 0;
+  live++;
+  <span class="k">return</span> c;                                   <span class="c">// becomes an SV chandle</span>
+}
+<span class="k">void</span> counter7_free(<span class="k">void</span>* inst) { <span class="k">if</span> (inst) { free(inst); live--; } }
+<span class="k">int</span>  counter7_live(<span class="k">void</span>) { <span class="k">return</span> live; }
+
+<span class="k">int</span> counter7(<span class="k">void</span>* inst, svBitVecVal* count, <span class="k">const</span> svBitVecVal* i,
+             <span class="k">const</span> svBit reset, <span class="k">const</span> svBit load) {
+  <span class="k">if</span> (!inst) { printf("LOG cerr counter7 called with a <span class="k">null</span> <span class="k">chandle</span>\n"); <span class="k">return</span> -1; }
+  c7* c = (c7*)inst;
+  <span class="k">if</span> (reset)     c-&gt;cnt = 0;
+  <span class="k">else</span> <span class="k">if</span> (load) c-&gt;cnt = *i;
+  <span class="k">else</span>           c-&gt;cnt++;
+  c-&gt;cnt &amp;= 0x7f;
+  *count = c-&gt;cnt;
+  <span class="k">return</span> 0;
+}
+}</code></pre>
+<p>On the SV side, each module instance owns one chandle. It constructs in an <code>initial</code> block and frees in a <code>final</code> block, the closest SV has to a constructor/destructor pair for a module:</p>
+<pre class="sv"><code><span class="c">// lab/chandle_counter.sv (excerpt)</span>
+<span class="k">import</span> "DPI-C" <span class="k">function</span> <span class="k">chandle</span> counter7_new();
+<span class="k">import</span> "DPI-C" <span class="k">function</span> <span class="k">void</span>    counter7_free(<span class="k">input</span> <span class="k">chandle</span> inst);
+<span class="k">import</span> "DPI-C" <span class="k">function</span> <span class="k">int</span>     counter7_live();
+<span class="k">import</span> "DPI-C" <span class="k">function</span> <span class="k">int</span>     counter7(<span class="k">input</span> <span class="k">chandle</span> inst, <span class="k">output</span> <span class="k">bit</span> [6:0] out,
+                                         <span class="k">input</span> <span class="k">bit</span> [6:0] in, <span class="k">input</span> <span class="k">bit</span> reset, load);
+
+<span class="k">module</span> cnt_inst #(<span class="k">parameter</span> <span class="k">bit</span> [6:0] INIT = 0) (<span class="k">input</span> <span class="k">bit</span> clk, reset, load);
+  <span class="k">chandle</span>   inst;                 <span class="c">// null until constructed</span>
+  <span class="k">bit</span> [6:0] out;
+  <span class="k">initial</span> inst = counter7_new();  <span class="c">// one C object per module instance</span>
+  <span class="k">final</span> <span class="k">begin</span>                     <span class="c">// SV has no destructor: free it yourself</span>
+    counter7_free(inst);
+    $display("LOG <span class="k">final</span> inst=%m live_after_free=%0d", counter7_live());
+  <span class="k">end</span>
+  <span class="k">always</span> @(posedge clk) <span class="k">begin</span>
+    <span class="k">void</span>'(counter7(inst, out, INIT, reset, load));
+    $display("LOG inst t=%0t inst=%m out=%0d", $time, out);
+  <span class="k">end</span>
+<span class="k">endmodule</span></code></pre>
+<p>Same stimulus as 0.3, now correct, and the <code>final</code> blocks return the live count to zero:</p>
+<pre class="out"><code>LOG inst t=10 inst=top.u2 out=1
+LOG inst t=10 inst=top.u1 out=1
+LOG inst t=30 inst=top.u2 out=10
+LOG inst t=30 inst=top.u1 out=120
+LOG inst t=50 inst=top.u2 out=11
+LOG inst t=50 inst=top.u1 out=121
+LOG inst t=70 inst=top.u2 out=12
+LOG inst t=70 inst=top.u1 out=122
+LOG live before_final=2
+LOG live top_final=2
+LOG final inst=top.u2 live_after_free=1
+LOG final inst=top.u1 live_after_free=0</code></pre>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 230" role="img" aria-label="Each module instance u1 and u2 holds a chandle variable inst. Each chandle holds an address on the C heap: u1's points to a c7 struct with cnt 122, u2's points to a different c7 struct with cnt 12. The SV side never dereferences the address; only C code does.">
+<rect class="ghost" x="10" y="10" width="300" height="210" rx="12"/><text class="ttl" x="24" y="32">SV (module instances)</text>
+<rect class="box" x="30" y="50" width="260" height="70" rx="8"/><text class="lbl" x="160" y="70">u1 : cnt_inst #(120)</text>
+<rect class="reg" x="50" y="84" width="220" height="26" rx="4"/><text class="t mid" x="160" y="97">chandle inst = 0x6000…4070</text>
+<rect class="box" x="30" y="135" width="260" height="70" rx="8"/><text class="lbl" x="160" y="155">u2 : cnt_inst #(10)</text>
+<rect class="reg" x="50" y="169" width="220" height="26" rx="4"/><text class="t mid" x="160" y="182">chandle inst = 0x6000…4080</text>
+<rect class="ghost" x="430" y="10" width="280" height="210" rx="12"/><text class="ttl" x="444" y="32">C heap (malloc)</text>
+<rect class="box hot" x="470" y="70" width="200" height="40" rx="6"/><text class="lbl" x="570" y="90">c7 { cnt = 122 }</text>
+<rect class="box hot" x="470" y="155" width="200" height="40" rx="6"/><text class="lbl" x="570" y="175">c7 { cnt = 12 }</text>
+<path class="e hot" d="M270,97 H470" marker-end="url(#ah-acc)"/>
+<path class="e hot" d="M270,182 H470" marker-end="url(#ah-acc)"/>
+<text class="note mid" x="370" y="88">opaque address</text><text class="note mid" x="370" y="173">opaque address</text>
+</svg>
+<figcaption><b>Fig. 0.2</b>Per-instance state. The chandle is just an address that SV stores and hands back; only C dereferences it. Two instances, two heap objects, no sharing. (Addresses are the shape of the real ones printed by Ex. 12.3 in the lab.)</figcaption>
+</figure>
+
+<p>Two details from the log are worth noticing. First, <code>LOG live top_final=2</code> printed <em>before</em> the instances freed their objects: Verilator ran <code>top</code>'s <code>final</code> block first, then u2's, then u1's. The order of <code>final</code> blocks is unspecified, so never read "after cleanup" state from another <code>final</code> block. Second, the C and the C++ versions of this model (<a href="#r-cpp">0.8</a>) produce identical <code>LOG</code> lines with the same SV file, which is the point Spear makes in §12.3.2.</p>
+<div class="callout hv"><p>The chandle pattern is the C-ABI version of a class: <code>_new</code> is the constructor, the chandle is <code>this</code>, every function takes <code>this</code> first, <code>_free</code> is the destructor. Every C library you will ever wrap for a testbench (a codec, a crypto library, the Python interpreter in <a href="../07_embedding_python/guide.html">step 07</a>) already has this shape.</p></div>
+
+<!-- 0.6 -->
+<h3 id="r-null"><span class="no">0.6</span>Null chandles</h3>
+<p>A chandle that was never assigned is <code>null</code>, and the call compiles and runs. What happens next depends only on the C code. The lab passes a never-constructed chandle on purpose (<code>+null</code> plusarg) to two versions of the C model:</p>
+<div class="tbl"><table>
+<tr><th>C model</th><th>Guard</th><th>Result with a null chandle</th></tr>
+<tr><td><code>chandle_counter.c</code></td><td><code>if (!inst) { printf(...); return -1; }</code></td><td>prints <code>LOG cerr counter7 called with a null chandle</code>, returns −1, simulation continues</td></tr>
+<tr><td><code>book_sig.c</code> (Sample 12.9 as printed)</td><td>none</td><td>segmentation fault, the whole simulator exits with status 139 (<code>RUN_RC=139</code>), no SV error, no <code>final</code> blocks</td></tr>
+</table></div>
+<p>A crash in DPI code takes the simulator down with it: no <code>$error</code>, no coverage database, no waveform flush. That is the price of running in the same process. Guard every entry point that takes a handle; return an error code (or call <code>$fatal</code> through an exported function, step 05) and let SV decide. Where a handle comes from SV, a null check is input validation at a trust boundary.</p>
+
+<!-- 0.7 -->
+<h3 id="r-proto"><span class="no">0.7</span>The prototype header catches type mismatches</h3>
+<p>Sample 12.9 declares the handle parameter as <code>c7 *inst</code> while SV declares <code>chandle</code>. Is that legal? It links and runs: the lab builds <code>book_sig.c</code> exactly like that and gets the correct counts. The reason is that a C-linkage symbol is just a name. The linker matches <code>_counter7</code> with <code>_counter7</code> and never sees parameter types. A mismatch that does matter (say SV passes <code>int</code> where C expects <code>longint</code>) links just as quietly and corrupts data at run time.</p>
+<p>Verilator generates the antidote. For every <code>import</code> it writes a C prototype into <code>V&lt;top&gt;__Dpi.h</code> in the build directory, and since your C files are compiled from that directory with <code>-I.</code>, a single <code>#include "Vtop__Dpi.h"</code> makes the compiler check your definition against the SV declaration (the lab's <code>book_sig.c</code> does it under <code>-DCHECK_PROTO</code>):</p>
+<pre class="out"><code>../../book_sig.c:17:7: error: conflicting types for 'counter7'
+int   counter7(c7* inst, svBitVecVal* count, const svBitVecVal* i,   // &lt;- c7*, not void*
+      ^
+./Vtop__Dpi.h:20:16: note: previous declaration is here
+    extern int counter7(void* inst, svBitVecVal* out, const svBitVecVal* in, svBit reset, svBit load);</code></pre>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 230" role="img" aria-label="Two paths from the SV import to the C definition. Top path, without the header: the compiler compiles the C file alone and the linker matches only the symbol name _counter7, so a parameter type mismatch passes. Bottom path, with the header: Verilator writes Vtop__Dpi.h from the import, the C file includes it, and the compiler compares void* against c7* and stops with conflicting types.">
+<rect class="box" x="20" y="90" width="150" height="50" rx="8"/><text class="lbl" x="95" y="108">SV import</text><text class="t mid" x="95" y="126">chandle inst</text>
+<rect class="box soft" x="250" y="20" width="200" height="50" rx="8"/><text class="lbl" x="350" y="38">linker</text><text class="t mid" x="350" y="56">matches name only</text>
+<rect class="box" x="530" y="20" width="170" height="50" rx="8"/><text class="lbl" x="615" y="38">book_sig.c</text><text class="t mid" x="615" y="56">c7* inst</text>
+<path class="e" d="M170,105 C210,90 210,45 250,45" marker-end="url(#ah)"/><path class="e" d="M530,45 H450" marker-end="url(#ah)"/>
+<text class="note" x="250" y="88">_counter7 == _counter7 → links, mismatch unseen</text>
+<rect class="box hot" x="250" y="160" width="200" height="50" rx="8"/><text class="lbl" x="350" y="178">Vtop__Dpi.h</text><text class="t mid" x="350" y="196">void* inst</text>
+<rect class="box" x="530" y="160" width="170" height="50" rx="8"/><text class="lbl" x="615" y="178">#include + c7*</text><text class="t mid" x="615" y="196">compiler compares</text>
+<path class="e" d="M170,125 C210,140 210,185 250,185" marker-end="url(#ah)"/><path class="e hot" d="M450,185 H530" marker-end="url(#ah-acc)"/>
+<text class="hotx" x="250" y="152">error: conflicting types for 'counter7'</text>
+</svg>
+<figcaption><b>Fig. 0.3</b>C linkage carries no types. The only place where SV's view of a function meets C's view is the generated prototype header. Include it in every DPI source file.</figcaption>
+</figure>
+<div class="callout hv"><p>Make <code>#include "V&lt;top&gt;__Dpi.h"</code> a rule for every DPI source file. It costs nothing in Verilator and turns a class of silent run-time corruptions into compile errors. Commercial simulators have the same feature under another name: <code>vlog -dpiheader</code> (Questa), <code>xrun -dpiheader</code> (Xcelium), and VCS writes <code>vc_hdrs.h</code>. Step 01 shows the header in detail.</p></div>
+
+<!-- 0.8 -->
+<h3 id="r-cpp"><span class="no">0.8</span>C++ behind a C ABI (Samples 12.13 and 12.14)</h3>
+<p>Most real models are C++: a class with private state and methods. The DPI cannot call a method directly. A method needs an object (<code>this</code>), and objects don't exist at link time, while DPI resolves imports by symbol name at link time (§12.3.2). The solution is the same as for C: one free function per method, with C linkage, taking the object pointer as the first argument.</p>
+<pre class="sv"><code><span class="c">// lab/counter7.cpp  (Samples 12.13 + 12.14)</span>
+<span class="k">class</span> Counter7 {
+ <span class="k">public</span>:
+  <span class="k">static</span> <span class="k">int</span> live;                                     <span class="c">// objects alive right now</span>
+  Counter7() : cnt(0) { live++; }
+  ~Counter7() { live--; }
+  <span class="k">void</span> signal(svBitVecVal* count, <span class="k">const</span> svBitVecVal* i, svBit reset, svBit load) {
+    <span class="k">if</span> (reset)     cnt = 0;
+    <span class="k">else</span> <span class="k">if</span> (load) cnt = *i;
+    <span class="k">else</span>           cnt++;
+    cnt &amp;= 0x7f;
+    *count = cnt;
+  }
+ <span class="k">private</span>:
+  <span class="k">unsigned</span> <span class="k">char</span> cnt;
+};
+<span class="k">int</span> Counter7::live = 0;
+
+<span class="k">extern</span> "C" {
+<span class="k">void</span>* counter7_new(<span class="k">void</span>)        { <span class="k">return</span> <span class="k">new</span> Counter7; }
+<span class="k">void</span>  counter7_free(<span class="k">void</span>* inst) { <span class="k">delete</span> static_cast&lt;Counter7*&gt;(inst); }  <span class="c">// delete nullptr: no-op</span>
+<span class="k">int</span>   counter7_live(<span class="k">void</span>)       { <span class="k">return</span> Counter7::live; }
+<span class="k">int</span>   counter7(<span class="k">void</span>* inst, svBitVecVal* count, <span class="k">const</span> svBitVecVal* i, <span class="k">const</span> svBit reset, <span class="k">const</span> svBit load) {
+  <span class="k">if</span> (!inst) { printf("LOG cerr counter7 called with a <span class="k">null</span> <span class="k">chandle</span>\n"); <span class="k">return</span> -1; }
+  static_cast&lt;Counter7*&gt;(inst)-&gt;signal(count, i, reset, load);
+  <span class="k">return</span> 0;
+}
+}</code></pre>
+<p>The SV side is <code>chandle_counter.sv</code>, unchanged. The lab builds it once against the C model and once against this C++ model, and check.py asserts that the two runs print identical <code>LOG</code> lines.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 200" role="img" aria-label="Call chain across the boundary: the SV statement counter7(inst, out, INIT, reset, load) calls the extern C function counter7 (symbol _counter7), which casts void* inst to Counter7* and calls the method Counter7::signal with this equal to inst, which updates the private member cnt and writes *count.">
+<rect class="box" x="10" y="70" width="160" height="60" rx="8"/><text class="lbl" x="90" y="92">SV call</text><text class="t mid" x="90" y="112">counter7(inst, …)</text>
+<rect class="box hot" x="200" y="70" width="170" height="60" rx="8"/><text class="lbl" x="285" y="92">extern "C" counter7</text><text class="t mid" x="285" y="112">symbol _counter7</text>
+<rect class="box soft" x="400" y="70" width="140" height="60" rx="8"/><text class="lbl" x="470" y="92">static_cast</text><text class="t mid" x="470" y="112">void* → Counter7*</text>
+<rect class="box" x="570" y="70" width="140" height="60" rx="8"/><text class="lbl" x="640" y="92">signal()</text><text class="t mid" x="640" y="112">this = inst</text>
+<path class="e" d="M170,100 H200" marker-end="url(#ah)"/><path class="e" d="M370,100 H400" marker-end="url(#ah)"/><path class="e" d="M540,100 H570" marker-end="url(#ah)"/>
+<text class="note mid" x="285" y="160">name fixed at link time</text><text class="note mid" x="640" y="160">object chosen at run time</text>
+<text class="ttl" x="10" y="40">simulator</text><text class="ttl" x="200" y="40">your .cpp: the C ABI shim</text><text class="ttl" x="570" y="40">your C++ model</text>
+</svg>
+<figcaption><b>Fig. 0.4</b>A static wrapper is the bridge from "name known at link time" to "object chosen at run time". The chandle carries the run-time part.</figcaption>
+</figure>
+
+<p>Forget <code>extern "C"</code> and the C++ compiler mangles the names (on macOS <code>counter7_new()</code> becomes <code>__Z12counter7_newv</code>), while the simulator calls the plain C names. The build fails at link time, and the error names exactly what the simulator was looking for (lab, <code>nocxx.cpp</code>):</p>
+<pre class="out"><code>  "_counter7_new", referenced from:
+      Vtop___024root___eval_initial(Vtop___024root*) in Vtop__ALL.a[2](Vtop__ALL.o)
+      Vtop___024unit____Vdpiimwrap_counter7_new_TOP____024unit(unsigned long long&amp;) in Vtop__ALL.a[2](Vtop__ALL.o)
+ld: symbol(s) not found for architecture x86_64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)</code></pre>
+<div class="callout note" style="--c-label:'The header helps here too'"><p>Including <code>Vtop__Dpi.h</code> also fixes this one. The header wraps its prototypes in <code>extern "C" { … }</code>, and in C++ a later definition with the same signature inherits the linkage of the earlier declaration. The lab proves it: the same <code>nocxx.cpp</code> built with <code>-DCHECK_PROTO</code> (which includes the header) links and prints the correct counts. Keep both safety nets anyway: the include, and an explicit <code>extern "C"</code> block around your wrappers.</p></div>
+
+<!-- 0.9 -->
+<h3 id="r-tlm"><span class="no">0.9</span>Transaction-level models (Samples 12.15–12.17)</h3>
+<p>The signal-level counter is called on every clock edge, by every instance, whether or not anything changed. That is fine for a counter and slow for a CPU model. A transaction-level model exposes operations instead (<code>reset</code>, <code>load</code>, <code>count</code>, <code>get</code>), and the testbench calls them only when something happens. Each method gets a static wrapper as before. The new part is on the SV side: an SV class wraps the C++ object, so the chandle never appears in test code.</p>
+<pre class="sv"><code><span class="c">// lab/tlm.sv (excerpt; Sample 12.17 plus an explicit free())</span>
+<span class="k">class</span> Counter7;
+  <span class="k">static</span> <span class="k">int</span> n_wrappers;           <span class="c">// SV-side static: shared by every Counter7 object</span>
+  <span class="k">local</span> <span class="k">chandle</span> inst;              <span class="c">// per-object: which C++ object this wrapper owns</span>
+  <span class="k">function</span> <span class="k">new</span>();
+    inst = counter7_new();
+    n_wrappers++;
+  <span class="k">endfunction</span>
+  <span class="k">function</span> <span class="k">void</span> free();            <span class="c">// the "destructor" SV does not have</span>
+    <span class="k">if</span> (inst != <span class="k">null</span>) counter7_delete(inst);
+    inst = <span class="k">null</span>;                   <span class="c">// second free() / use after free becomes a no-op / error</span>
+  <span class="k">endfunction</span>
+  <span class="k">function</span> <span class="k">void</span> count();               counter7_count(inst);  <span class="k">endfunction</span>
+  <span class="k">function</span> <span class="k">void</span> load(<span class="k">bit</span> [6:0] val);   counter7_load(inst, val); <span class="k">endfunction</span>
+  <span class="k">function</span> <span class="k">void</span> reset();               counter7_reset(inst);  <span class="k">endfunction</span>
+  <span class="k">function</span> <span class="k">bit</span> [6:0] get();            <span class="k">return</span> 7'(counter7_get(inst)); <span class="k">endfunction</span>
+  <span class="k">function</span> <span class="k">bit</span> alive();                <span class="k">return</span> inst != <span class="k">null</span>;   <span class="k">endfunction</span>
+<span class="k">endclass</span></code></pre>
+<p>Note <code>counter7_get</code> returns <code>int</code>, not <code>bit [6:0]</code>. An import can only <em>return</em> small scalar types (<code>void</code>, <code>byte</code>, <code>shortint</code>, <code>int</code>, <code>longint</code>, <code>real</code>, <code>shortreal</code>, <code>chandle</code>, <code>string</code>, and scalar <code>bit</code>/<code>logic</code>). A packed vector would need a pointer, so it must come back through an <code>output</code> argument (<a href="../02_data_types/guide.html">step 02</a>). The class converts with a cast. In the lab, <code>reset; load(126); count; count</code> gives <code>get=0</code>: 126 → 127 → 0 in 7 bits.</p>
+<div class="callout fpga" style="--c-label:'For the designer'"><p>Signal-level vs transaction-level is the same trade-off as cycle-accurate vs functional reference models. Signal level costs one DPI call per instance per clock and is easy to align with the RTL cycle by cycle. Transaction level costs one call per transaction, and you compare at transaction boundaries in a scoreboard. Golden models for datapaths (step 06) are almost always transaction-level.</p></div>
+
+<!-- 0.10 -->
+<h3 id="r-life"><span class="no">0.10</span>Lifetime: SV garbage collection meets the C++ heap</h3>
+<p>SV class objects are garbage-collected: when no handle points to an object, the simulator may reclaim it. SV has no destructor, so nothing runs when that happens. The C++ object the chandle points to is invisible to the collector and stays allocated. The lab measures this with the C++ live-object counter (output of <code>tlm.sv</code>):</p>
+<pre class="sv"><code>c2 = <span class="k">new</span> c1;                       <span class="c">// shallow copy: copies the chandle, not the C++ object</span>
+c2.count();
+<span class="c">// LOG shallow c1=1 c2=1 live=1 wrappers=1   &lt;- one C++ object; new() did not run</span>
+
+<span class="k">for</span> (<span class="k">int</span> k = 0; k &lt; 100; k++) <span class="k">begin</span> tmp = <span class="k">new</span>; tmp.count(); <span class="k">end</span>
+tmp = <span class="k">null</span>;
+<span class="c">// LOG leak live=101 wrappers=101            &lt;- 100 C++ counters nobody can reach</span>
+
+<span class="k">for</span> (<span class="k">int</span> k = 0; k &lt; 100; k++) <span class="k">begin</span> tmp = <span class="k">new</span>; tmp.count(); tmp.free(); <span class="k">end</span>
+<span class="c">// LOG noleak live=101                       &lt;- free() before dropping: no new leaks</span>
+
+c1.free();                         <span class="c">// frees the object c2 ALSO points to</span>
+<span class="c">// LOG after_free c1_alive=0 c2_alive=1 live=100   &lt;- c2 now holds a dangling chandle</span></code></pre>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 240" role="img" aria-label="Left panel, after c2 = new c1: two SV objects c1 and c2 each hold the same chandle value, both pointing to one C++ Counter7 object with live=1. Right panel, after c1.free(): c1's chandle is null, c2's chandle still holds the old address, which now points to freed memory: a dangling handle.">
+<text class="ttl" x="20" y="24">(a) after c2 = new c1</text>
+<rect class="box" x="20" y="45" width="130" height="50" rx="8"/><text class="lbl" x="85" y="63">c1</text><text class="t mid" x="85" y="82">inst = A</text>
+<rect class="box" x="20" y="135" width="130" height="50" rx="8"/><text class="lbl" x="85" y="153">c2</text><text class="t mid" x="85" y="172">inst = A</text>
+<rect class="box soft" x="200" y="90" width="130" height="50" rx="8"/><text class="lbl" x="265" y="108">Counter7 @A</text><text class="t mid" x="265" y="127">cnt = 1</text>
+<path class="e" d="M150,70 C180,70 180,105 200,108" marker-end="url(#ah)"/><path class="e" d="M150,160 C180,160 180,125 200,122" marker-end="url(#ah)"/>
+<g transform="translate(370,0)">
+<text class="ttl" x="20" y="24">(b) after c1.free()</text>
+<rect class="box" x="20" y="45" width="130" height="50" rx="8"/><text class="lbl" x="85" y="63">c1</text><text class="t mid" x="85" y="82">inst = null</text>
+<rect class="box hot" x="20" y="135" width="130" height="50" rx="8"/><text class="lbl" x="85" y="153">c2</text><text class="t mid" x="85" y="172">inst = A</text>
+<rect class="ghost" x="200" y="90" width="130" height="50" rx="8"/><text class="lbl" x="265" y="108">freed @A</text><text class="t mid" x="265" y="127">garbage</text>
+<path class="e hot" d="M150,160 C180,160 180,125 200,122" marker-end="url(#ah-acc)"/>
+<text class="hotx" x="20" y="215">c2.count() = use after free</text>
+</g>
+</svg>
+<figcaption><b>Fig. 0.5</b>SV copies handles, not what they point to. A shallow copy (<code>new c1</code>) creates a second owner of one C++ object; freeing through one leaves the other dangling. The lab does not call <code>c2.count()</code>: that is undefined behavior and may "work" for years.</figcaption>
+</figure>
+
+<p>Three ownership policies work. Pick one per wrapper class and write it in the class header comment:</p>
+<ul>
+<li><b>Explicit free</b>, as above: the test calls <code>free()</code>; <code>free()</code> nulls the chandle so a second call is harmless. Forbid shallow copies by convention.</li>
+<li><b>Deep copy</b>: a <code>copy()</code> method that calls a C++ copy constructor through a <code>_clone</code> wrapper, so every SV wrapper owns exactly one C++ object (exercise T8).</li>
+<li><b>Owned by a module</b>: create in <code>initial</code>, free in <code>final</code> (0.5). Good for one model per instance that lives for the whole simulation. Leaks don't matter if the process ends, but a long regression that builds thousands of objects per test does run out of memory.</li>
+</ul>
+<div class="callout note" style="--c-label:'In UVM'"><p>UVM objects are cloned with <code>do_copy</code>. If a <code>uvm_object</code> holds a chandle, its <code>do_copy</code> must either clone the C++ object or share it with reference counting. The default (copy the field) is the shallow copy of Fig. 0.5.</p></div>
+
+<!-- 0.11 -->
+<h3 id="r-homes"><span class="no">0.11</span>Four homes for state</h3>
+<p>Combining 0.2–0.10, state for a DPI model can live in four places, with four sharing scopes. The lab exercises all four in <code>tlm.sv</code> and <code>tlm.cpp</code>: <code>Counter7::live</code> (C++ static), the <code>cnt</code> member (C++ heap object), <code>Counter7::n_wrappers</code> (SV class static) and <code>inst</code> (SV object member).</p>
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 230" role="img" aria-label="A two by two grid. Columns: SystemVerilog side, C/C++ side. Rows: shared by all, one per object. SV static class member n_wrappers is shared by all SV wrappers. C/C++ static live is shared by every caller in the process. SV object member inst is one per SV object. C/C++ heap object cnt is one per new call, reached through a chandle.">
+<text class="ttl" x="200" y="24">SystemVerilog</text><text class="ttl" x="470" y="24">C / C++</text>
+<text class="ttl" x="20" y="85">shared by all</text><text class="ttl" x="20" y="175">one per object</text>
+<rect class="box soft" x="190" y="45" width="240" height="70" rx="8"/><text class="lbl" x="310" y="70">class static</text><text class="t mid" x="310" y="92">Counter7::n_wrappers</text>
+<rect class="box soft" x="460" y="45" width="240" height="70" rx="8"/><text class="lbl" x="580" y="70">C static / global</text><text class="t mid" x="580" y="92">Counter7::live, static count</text>
+<rect class="box" x="190" y="135" width="240" height="70" rx="8"/><text class="lbl" x="310" y="160">object member</text><text class="t mid" x="310" y="182">local chandle inst</text>
+<rect class="box hot" x="460" y="135" width="240" height="70" rx="8"/><text class="lbl" x="580" y="160">heap object</text><text class="t mid" x="580" y="182">c7 / Counter7 { cnt }</text>
+<path class="e hot" d="M430,170 H460" marker-end="url(#ah-acc)"/>
+</svg>
+<figcaption><b>Fig. 0.6</b>Where model state can live. The bottom row is the chandle pattern: an SV member that owns a C/C++ heap object. The top row is for deliberate sharing (statistics, a single global model, a cache).</figcaption>
+</figure>
+<p>A detail the lab shows: <code>n_wrappers</code> stayed at 1 after <code>c2 = new c1</code>, because a shallow copy does not run <code>new()</code>. Any SV-side bookkeeping you do in the constructor (counting, registering, allocating a C++ object) is skipped by a shallow copy.</p>
+
+<!-- 0.12 -->
+<h3 id="r-pure"><span class="no">0.12</span>pure and hidden state</h3>
+<p>Step 01 introduced <code>pure</code>: a promise that the result depends only on the inputs and the call has no side effects (IEEE 1800-2023 §35.5.2). The standard lets the simulator exploit the promise: it may eliminate a call whose result is unused, or merge two calls with the same arguments. A stateful model breaks the promise by definition. A counter's <code>count()</code> returns different values for the same (empty) input. Never import a function with state as <code>pure</code>.</p>
+<p>How hard does Verilator 5.052 punish the lie? The lab imports a <code>bump()</code> that counts its calls as <code>pure</code>, calls it with duplicated arguments, discards a result with <code>void'()</code>, and overwrites a result in a loop:</p>
+<pre class="sv"><code><span class="k">import</span> "DPI-C" <span class="k">pure</span> <span class="k">function</span> <span class="k">int</span> bump(<span class="k">input</span> <span class="k">int</span> x);       <span class="c">// a lie: bump() counts its calls</span>
+...
+a = bump(1);           <span class="c">// used result</span>
+b = bump(1);           <span class="c">// same argument: may be merged with the first</span>
+<span class="k">void</span>'(bump(5));        <span class="c">// result discarded: may be removed</span>
+<span class="k">for</span> (<span class="k">int</span> k = 0; k &lt; 10; k++) c = bump(k);   <span class="c">// only the last value of c is used</span>
+<span class="c">// LOG pure a=2 b=2 c=10 calls=13             (same with and without `pure`)</span></code></pre>
+<p>All 13 calls ran. Verilator 5.052 did not remove or merge anything here. That is a measurement of one tool version on one test, not a guarantee. The place where <code>pure</code> does change Verilator's behavior today is threading.</p>
+
+<!-- 0.13 -->
+<h3 id="r-threads"><span class="no">0.13</span>Threads: who calls your model?</h3>
+<p>Commercial simulators evaluate SV processes on one thread, so DPI code runs on that thread. Verilator can partition the design across OS threads (<code>--threads N</code>) and has to decide whether a DPI import may run on any of them. The option <code>--threads-dpi</code> controls it. The manual says: <code>all</code> assumes every import is thread-safe ("Any DPI libraries need appropriate mutexes"); <code>none</code> "will serialize calls to DPI imports"; <code>pure</code>, the default, assumes pure imports are thread-safe and non-pure ones are not.</p>
+<p>The lab measures it: four independent modules, two calling a <code>pure</code> import and two a non-pure one, 64 calls per clock each, 2000 clocks. Each call records <code>std::this_thread::get_id()</code> in a mutex-protected set.</p>
+<div class="tbl"><table>
+<tr><th>Build</th><th class="num">OS threads seen by pure import</th><th class="num">by non-pure import</th></tr>
+<tr><td class="mono">(no --threads)</td><td class="num">1</td><td class="num">1</td></tr>
+<tr><td class="mono">--threads 2</td><td class="num"><b>2</b></td><td class="num">1</td></tr>
+<tr><td class="mono">--threads 2 --threads-dpi none</td><td class="num">1</td><td class="num">1</td></tr>
+<tr><td class="mono">--threads 2 --threads-dpi all</td><td class="num"><b>2</b></td><td class="num">1</td></tr>
+</table></div>
+<p>The default puts pure imports on two OS threads, so <b>two pure calls can run at the same time</b>. In this design <code>all</code> did not spread the non-pure calls, but the manual allows it. The simulation result was identical in all four builds (check.py compares the accumulators).</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 170" role="img" aria-label="Two horizontal thread lanes for one evaluation of a clock edge under --threads 2 with the default --threads-dpi pure. Thread 0 runs module p0 calling tag_pure, then q0 and q1 calling tag_impure. Thread 1 runs module p1 calling tag_pure at the same time as p0. Non-pure calls stay on a single thread.">
+<text class="ttl" x="10" y="50">thread 0</text><text class="ttl" x="10" y="120">thread 1</text>
+<rect class="box soft" x="100" y="30" width="180" height="34" rx="6"/><text class="lbl" x="190" y="47">p0: tag_pure ×64</text>
+<rect class="box" x="300" y="30" width="180" height="34" rx="6"/><text class="lbl" x="390" y="47">q0: tag_impure ×64</text>
+<rect class="box" x="500" y="30" width="180" height="34" rx="6"/><text class="lbl" x="590" y="47">q1: tag_impure ×64</text>
+<rect class="box hot" x="100" y="100" width="180" height="34" rx="6"/><text class="lbl" x="190" y="117">p1: tag_pure ×64</text>
+<line class="grid" x1="100" y1="150" x2="680" y2="150"/><text class="note" x="100" y="166">one clock edge (sketch: Verilator's actual partitioning is internal)</text>
+</svg>
+<figcaption><b>Fig. 0.7</b>Under <code>--threads 2</code>, two pure calls can overlap in time. Any shared state they touch (a static counter, a global cache, a logging stream) needs a mutex or an atomic, or the import must not be pure.</figcaption>
+</figure>
+<div class="callout hv"><p>"pure" now means two things: <em>no side effects</em> (LRM, optimizer) and <em>thread-safe</em> (Verilator scheduler). A model with any shared state, including a static call counter for statistics or a <code>printf</code> to a shared log, is neither. Default to non-pure. Mark <code>pure</code> only small math functions whose code you can read in one screen.</p></div>
+<div class="callout note" style="--c-label:'Commercial simulators'"><p>Questa, VCS and Xcelium evaluate SV on one thread, so DPI code runs serially. Their multicore modes (VCS FGP, Xcelium MCE) restrict or serialize DPI, and the exact rules are vendor-documented. A model that is correct only because calls are serialized is a latent bug the day someone turns on threads, and Part B makes it acute: the CPython interpreter of step 07 is not thread-safe without the GIL.</p></div>
+
+<!-- 0.14 -->
+<h3 id="r-recipe"><span class="no">0.14</span>Recipe: a stateful C/C++ model behind DPI</h3>
+<ol>
+<li><b>C++ class with the model</b>, no DPI types inside if you can help it (convert at the wrapper).</li>
+<li><b>One <code>extern "C"</code> block</b> with <code>_new</code>, <code>_delete</code>, and one wrapper per operation, each taking <code>void*</code> first and checking it against null.</li>
+<li><b>Include <code>V&lt;top&gt;__Dpi.h</code></b> in the wrapper file so the compiler checks every signature.</li>
+<li><b>An SV class</b> with a <code>local chandle</code>, a constructor that calls <code>_new</code>, a <code>free()</code> that deletes and nulls, and methods with SV types. Test code never sees the chandle.</li>
+<li><b>Decide copy semantics</b>: forbid shallow copies, or provide <code>copy()</code> via a C++ copy constructor.</li>
+<li><b>Count live objects</b> in C++ and assert zero at the end of the test (a one-line leak detector).</li>
+<li><b>Never <code>pure</code></b> for anything stateful; mutex any shared state if you build with <code>--threads</code>.</li>
+<li>Need the instance <em>without</em> passing a handle? Key a map by <code>%m</code> (exercise T10), or use the standard scope user data, <code>svPutUserData</code>/<code>svGetUserData</code> with a <code>context</code> import (<a href="../05_export_and_context/guide.html">step 05</a>).</li>
+</ol>
+
+<h2 id="s1"><span class="no">§1 · Objectives</span>What you can do after this step</h2>
+<ul>
+<li>Explain why a C <code>static</code> in a DPI model is one copy per process, and predict the corrupted output of two instances sharing it.</li>
+<li>Write the chandle pattern (<code>_new</code> / operations / <code>_free</code>) in C and in C++, with null guards and a live-object counter.</li>
+<li>State what an SV <code>chandle</code> may and may not do per IEEE 1800-2023 §6.14, and where Verilator is more permissive.</li>
+<li>Use the generated <code>V&lt;top&gt;__Dpi.h</code> to turn signature mismatches and missing <code>extern "C"</code> into compile errors.</li>
+<li>Wrap a transaction-level C++ model in an SV class, and choose an ownership policy (explicit free, deep copy, module-owned).</li>
+<li>Diagnose leaks, dangling chandles from shallow copies, and crashes from null handles.</li>
+<li>Decide when an import may be <code>pure</code>, and what <code>--threads</code> / <code>--threads-dpi</code> do to a stateful model.</li>
+</ul>
+<p>Prerequisites: <a href="../01_first_call/guide.html">01 First call</a> (import, <code>pure</code>, build flow), <a href="../02_data_types/guide.html">02 Data types</a> (<code>svBit</code>, <code>svBitVecVal</code>, argument directions).</p>
+
+<h2 id="s2"><span class="no">§2 · Exercises</span>11 graded exercises, with solutions</h2>
+<p>★ basic · ★★ intermediate · ★★★ real design. Every code solution is in <code>lab/ex/</code> and checked by <code>check.py</code>. "Ex. 12.N" = exercise from the book (which has no solutions). T1–T5 are the book's shifter, built up step by step.</p>
+
+<div class="q">
+<p><span class="n">T1 ★</span><b>Ex. 12.2.</b> Write <code>shift_c(i, n, ld)</code> in C: when <code>ld</code> is 1, shift <code>i</code> by <code>n</code> (left if <code>n</code> &gt; 0, right if negative) and load it into an internal 32-bit register; when <code>ld</code> is 0, shift the register itself. Return the register. Test it from SV, including a shift by 40.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">// lab/ex/shift_static.c</span>
+<span class="k">static</span> <span class="k">uint32_t</span> shift(<span class="k">uint32_t</span> v, <span class="k">int</span> n) {
+  <span class="k">if</span> (n &gt;= 32 || n &lt;= -32) <span class="k">return</span> 0;           <span class="c">// C: shifting by &gt;= width is undefined behavior</span>
+  <span class="k">return</span> n &gt;= 0 ? v &lt;&lt; n : v &gt;&gt; -n;
+}
+<span class="k">extern</span> "C" <span class="k">uint32_t</span> shift_c(<span class="k">uint32_t</span> i, <span class="k">int</span> n, <span class="k">unsigned</span> <span class="k">char</span> ld) {
+  <span class="k">static</span> <span class="k">uint32_t</span> reg = 0;                     <span class="c">// the single, shared internal register</span>
+  reg = shift(ld ? i : reg, n);
+  <span class="k">return</span> reg;
+}</code></pre>
+<pre class="sv"><code><span class="k">import</span> "DPI-C" <span class="k">function</span> <span class="k">int</span> <span class="k">unsigned</span> shift_c(<span class="k">input</span> <span class="k">int</span> <span class="k">unsigned</span> i, <span class="k">input</span> <span class="k">int</span> n, <span class="k">input</span> <span class="k">bit</span> ld);
+<span class="c">// shift_c('hF0, 4, 1) = f00   shift_c(0, -8, 0) = f   shift_c(0, 0, 0) = f</span>
+<span class="c">// shift_c('h8000_0001, 0, 1) = 80000001   shift_c(0, 1, 0) = 2   shift_c(0, 40, 0) = 0</span></code></pre>
+<p>The register is a <code>static</code> because the exercise asks for exactly one. The guard for <code>|n| ≥ 32</code> is not optional: <code>v &lt;&lt; 40</code> on a 32-bit value is undefined in C, and x86 masks the count to 5 bits, so it would compute <code>v &lt;&lt; 8</code>. SV defines the result as 0, and the golden model must match SV, not the CPU.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">T2 ★★</span><b>Ex. 12.3.</b> Make the shifter multi-instance. Each instance needs a unique identifier: use the address of its storage, and print it with every call. Instantiate it twice and call each instance twice.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">// lab/ex/shift.c (excerpt)</span>
+<span class="k">typedef</span> <span class="k">struct</span> { <span class="k">uint32_t</span> reg; <span class="k">int</span> calls; } shifter;
+<span class="k">extern</span> "C" {
+<span class="k">void</span>* shift_new(<span class="k">uint32_t</span> init) { shifter* s = (shifter*)calloc(1, <span class="k">sizeof</span> *s); s-&gt;reg = init; <span class="k">return</span> s; }
+<span class="k">void</span>  shift_free(<span class="k">void</span>* h) { free(h); }
+<span class="k">uint32_t</span> shift_c(<span class="k">void</span>* h, <span class="k">uint32_t</span> i, <span class="k">int</span> n, <span class="k">unsigned</span> <span class="k">char</span> ld) {
+  shifter* s = (shifter*)h;
+  s-&gt;reg = shift(ld ? i : s-&gt;reg, n);
+  s-&gt;calls++; total_calls++;
+  printf("LOG ex3 addr=%p i=%08x n=%d ld=%d reg=%08x\n", h, i, n, ld, s-&gt;reg);
+  <span class="k">return</span> s-&gt;reg;
+}
+}</code></pre>
+<p>Lab output (addresses vary per run; check.py asserts that the two instances have different addresses and that each address repeats):</p>
+<pre class="out"><code>LOG ex3 addr=0x6000028d4070 i=00000000 n=4 ld=0 reg=00000010
+LOG ex3 addr=0x6000028d4080 i=00000000 n=-4 ld=0 reg=08000000
+LOG ex3 addr=0x6000028d4070 i=00000000 n=1 ld=0 reg=00000020
+LOG ex3 addr=0x6000028d4080 i=00000000 n=-1 ld=0 reg=04000000</code></pre>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">T3 ★</span><b>Ex. 12.4.</b> Extend T2 to report the total number of <code>shift_c</code> calls across all instances, plus the per-instance count.</p>
+<details><summary>Show solution</summary><div class="a">
+<p>Total = a <code>static int total_calls</code> (deliberately shared); per instance = a field of the struct. Both are incremented in <code>shift_c</code>; two getters expose them: <code>int shift_total(void)</code> and <code>int shift_calls(void* h)</code>. Lab: <code>calls_a=2 calls_b=2 total=4</code>. This is the "static is fine when there really is one of it" case from <a href="#r-twice">0.3</a>. Under <code>--threads</code> the total would need <code>std::atomic&lt;int&gt;</code> if the import were pure (0.13).</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">T4 ★</span><b>Ex. 12.5.</b> Let the SV caller set the register's initial value when it creates an instance.</p>
+<details><summary>Show solution</summary><div class="a">
+<p>Constructor arguments are ordinary DPI inputs: <code>void* shift_new(uint32_t init)</code>, imported as <code>function chandle shift_new(input int unsigned init)</code>. Lab: <code>a = shift_new(1); b = shift_new('h8000_0000)</code>, then <code>a</code> shifted by 4 and 1 gives <code>20</code>, <code>b</code> shifted by −4 and −1 gives <code>04000000</code>.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">T5 ★★</span><b>Ex. 12.6.</b> Encapsulate the shifter in an SV class so that the chandle never appears in test code.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">// lab/ex/shift_class.sv (excerpt)</span>
+<span class="k">class</span> Shift;
+  <span class="k">local</span> <span class="k">chandle</span> h;
+  <span class="k">function</span> <span class="k">new</span>(<span class="k">int</span> <span class="k">unsigned</span> init = 0); h = shift_new(init); <span class="k">endfunction</span>
+  <span class="k">function</span> <span class="k">void</span> free(); <span class="k">if</span> (h != <span class="k">null</span>) shift_free(h); h = <span class="k">null</span>; <span class="k">endfunction</span>
+  <span class="k">function</span> <span class="k">int</span> <span class="k">unsigned</span> load(<span class="k">int</span> <span class="k">unsigned</span> i, <span class="k">int</span> n = 0); <span class="k">return</span> shift_c(h, i, n, 1); <span class="k">endfunction</span>
+  <span class="k">function</span> <span class="k">int</span> <span class="k">unsigned</span> shift(<span class="k">int</span> n);                   <span class="k">return</span> shift_c(h, 0, n, 0); <span class="k">endfunction</span>
+<span class="k">endclass</span>
+<span class="c">// s1 = new('hF); s2 = new; s2.load('hAB, 8);  -&gt;  s1.shift(4) = f0, s2.shift(-4) = ab0, total = 3</span></code></pre>
+<p><code>local</code> makes the handle private to the class, so test code cannot copy it out and free it twice.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">T6 ★</span><b>Predict.</b> In <code>static_counter.sv</code> (0.2), change the stimulus so that <code>reset</code> is held at 1 for the whole simulation. What do u1 and u2 print? Does the shared static still cause a visible bug?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>Both print 0 every cycle (lab: <code>static_reset.log</code>, run with <code>+hold_reset</code>). Reset writes a constant, so the read-modify-write never depends on the other instance's update. The shared state is still there, it just isn't observable with this stimulus. Same lesson as the load cycle in 0.3: the corruption appears only when both callers do <em>read-modify-write</em> on the shared variable in the same time step. Tests that only reset and load prove nothing about instance isolation.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">T7 ★★</span><b>Find the bug.</b> A colleague moved the counter to C++ and the build now fails with <code>"_counter7_new", referenced from: … ld: symbol(s) not found</code>. The function is right there in the <code>.cpp</code>. What is wrong, and what are two ways to fix it?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>The wrappers are compiled with C++ linkage, so the object file defines <code>__Z12counter7_newv</code> (lab: <code>nm build/vl_nocxx/nocxx.o</code>), while the simulator references the C name <code>_counter7_new</code>. Fix 1: wrap the wrappers in <code>extern "C" { … }</code>. Fix 2: <code>#include "Vtop__Dpi.h"</code> before the definitions; its <code>extern "C"</code> declarations give the definitions C linkage (lab build <code>nocxxh</code>). Do both.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">T8 ★★</span><b>Write.</b> The <code>Counter7</code> SV class of 0.9 shares its C++ object on <code>new c1</code>. Add a <code>copy()</code> method that returns an independent counter with the same value, and show that freeing the original leaves the copy intact.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">// lab/ex/clone.cpp (excerpt): C++ copy constructor + one more wrapper</span>
+Counter7(<span class="k">const</span> Counter7&amp; o) : cnt(o.cnt) { live++; }
+<span class="k">extern</span> "C" <span class="k">void</span>* counter7_clone(<span class="k">void</span>* inst) { <span class="k">return</span> <span class="k">new</span> Counter7(*obj(inst)); }</code></pre>
+<pre class="sv"><code><span class="c">// lab/ex/clone.sv (excerpt)</span>
+<span class="k">class</span> Counter7;
+  <span class="k">local</span> <span class="k">chandle</span> inst;
+  <span class="k">function</span> <span class="k">new</span>(<span class="k">chandle</span> from = <span class="k">null</span>);           <span class="c">// null: fresh object; else adopt `from`</span>
+    inst = (from == <span class="k">null</span>) ? counter7_new() : from;
+  <span class="k">endfunction</span>
+  <span class="k">function</span> Counter7 copy();  copy = <span class="k">new</span>(counter7_clone(inst)); <span class="k">endfunction</span>
+  ...
+<span class="k">endclass</span>
+<span class="c">// a.load(5); b = a.copy(); b.count();   -&gt; a=5 b=6 live=2</span>
+<span class="c">// a.free();                             -&gt; b_after_a_free=6 live=1</span>
+<span class="c">// b.free();                             -&gt; live_end=0</span></code></pre>
+<p>The constructor adopting an existing chandle is what lets <code>copy()</code> return a properly constructed wrapper. Calling <code>new</code> inside a method of the class constructs an object of that class.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">T9 ★★★</span><b>Design.</b> Write a reference model of a bounded FIFO in C++ (<code>std::deque</code>) behind a chandle, with <code>push</code> returning 0 when full and <code>pop</code> returning 0 when empty (the value comes back through an <code>output</code>). Check two independent instances against SV queues for 2000 random operations.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">// lab/ex/fifo_model.cpp</span>
+<span class="k">struct</span> Fifo { <span class="k">std</span>::deque&lt;<span class="k">uint32_t</span>&gt; q; <span class="k">int</span> depth; };
+<span class="k">static</span> Fifo* F(<span class="k">void</span>* p) { <span class="k">return</span> static_cast&lt;Fifo*&gt;(p); }
+<span class="k">extern</span> "C" {
+<span class="k">void</span>* fifo_new(<span class="k">int</span> depth)              { <span class="k">return</span> <span class="k">new</span> Fifo{{}, depth}; }
+<span class="k">void</span>  fifo_delete(<span class="k">void</span>* f)             { <span class="k">delete</span> F(f); }
+<span class="k">int</span>   fifo_push(<span class="k">void</span>* f, <span class="k">uint32_t</span> v)   { <span class="k">if</span> ((<span class="k">int</span>)F(f)-&gt;q.size() &gt;= F(f)-&gt;depth) <span class="k">return</span> 0; F(f)-&gt;q.push_back(v); <span class="k">return</span> 1; }
+<span class="k">int</span>   fifo_pop(<span class="k">void</span>* f, <span class="k">uint32_t</span>* v)   { <span class="k">if</span> (F(f)-&gt;q.empty()) <span class="k">return</span> 0; *v = F(f)-&gt;q.front(); F(f)-&gt;q.pop_front(); <span class="k">return</span> 1; }
+<span class="k">int</span>   fifo_size(<span class="k">void</span>* f)               { <span class="k">return</span> (<span class="k">int</span>)F(f)-&gt;q.size(); }
+}</code></pre>
+<pre class="sv"><code><span class="k">import</span> "DPI-C" <span class="k">function</span> <span class="k">int</span> fifo_pop(<span class="k">input</span> <span class="k">chandle</span> f, <span class="k">output</span> <span class="k">int</span> <span class="k">unsigned</span> v);  <span class="c">// output -&gt; uint32_t*</span>
+...
+<span class="k">chandle</span> m [2];  <span class="k">int</span> <span class="k">unsigned</span> q [2][$];         <span class="c">// two models, two SV reference queues</span>
+<span class="c">// each step: pick k, push or pop on both, compare accept/reject, popped value and size</span></code></pre>
+<p>Lab: <code>errors=0</code> over 2000 operations, with both full and empty rejections exercised. An array of chandles is legal (an unpacked array of an unpacked type), which is how a testbench holds one model per channel.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">T10 ★★★</span><b>Design.</b> Keep per-instance state without passing a chandle: each module instance identifies itself by its hierarchical name. Implement an accumulator <code>acc_by_name(who, x)</code> and instantiate three accumulators with steps 1, 10 and 100. What does this cost compared with a chandle?</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">// lab/ex/registry.cpp</span>
+<span class="k">static</span> <span class="k">std</span>::map&lt;<span class="k">std</span>::<span class="k">string</span>, <span class="k">int</span>&gt; state;
+<span class="k">extern</span> "C" <span class="k">int</span> acc_by_name(<span class="k">const</span> <span class="k">char</span>* who, <span class="k">int</span> x) { <span class="k">return</span> state[who] += x; }   <span class="c">// creates on first use</span></code></pre>
+<pre class="sv"><code><span class="k">module</span> accum #(<span class="k">parameter</span> <span class="k">int</span> STEP = 1) (<span class="k">input</span> <span class="k">bit</span> clk);
+  <span class="k">string</span> me = $sformatf("%m");              <span class="c">// computed once, not per call</span>
+  <span class="k">int</span>    sum;
+  <span class="k">always</span> @(posedge clk) sum &lt;= acc_by_name(me, STEP);
+<span class="k">endmodule</span>
+<span class="c">// after 5 clocks: a=5 b=50 c=500, 3 entries, b.me = "top.b"</span></code></pre>
+<p>Costs: a string copy and a map lookup (O(log n) string compares) on every call instead of one pointer dereference; state is never freed (no destructor event); and the name is only unique per <em>module</em> instance, not per class object. The benefit: no constructor to forget, and the key is human-readable in C logs. The standard version of this idea is <code>svGetScope()</code> + <code>svPutUserData</code> in a <code>context</code> import (step 05), which keys by scope handle instead of by string.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">T11 ★★</span><b>Find the bug.</b> A golden model has <code>import "DPI-C" pure function int crc_step(input int crc, input byte b);</code> and, for statistics, <code>crc_step</code> increments a global <code>static long n_bytes</code>. Simulation is built with <code>verilator --threads 4</code>. Name two independent problems.</p>
+<details><summary>Show solution</summary><div class="a">
+<p>(1) <b>The <code>pure</code> promise is false</b>: the function has a side effect, so the LRM allows the simulator to drop calls whose result is unused or merge repeated calls. The statistic may be wrong on another tool (Verilator 5.052 happened to run all calls in the lab's test, 0.12). (2) <b>Data race</b>: under <code>--threads 4</code> with the default <code>--threads-dpi pure</code>, Verilator assumes pure imports are thread-safe and calls them from several OS threads (lab: 2 threads seen with <code>--threads 2</code>), so <code>n_bytes++</code> is an unsynchronized read-modify-write and loses counts. Fix: drop <code>pure</code> (the call gets serialized), or keep the CRC pure and move the statistic out of it (count in SV, or <code>std::atomic&lt;long&gt;</code>).</p>
+</div></details>
+</div>
+
+<h2 id="s3"><span class="no">§3 · Quiz</span>14 questions, self-grading</h2>
+<p class="quiz-score"></p>
+
+<div class="quiz" data-answer="c">
+<p class="qq">1. A C model keeps its state in a <code>static</code> local. The SV module that calls it is instantiated 4 times. How many copies of the state exist?</p>
+<label><input type="radio" value="a"> 4, one per module instance</label>
+<label><input type="radio" value="b"> 4, but only if the import is declared <code>context</code></label>
+<label><input type="radio" value="c"> 1 for the whole simulation process</label>
+<label><input type="radio" value="d"> 1 per SV compilation unit</label>
+<div class="why">C statics are per process. Module instances are an SV concept; C sees four callers of one function. <code>context</code> lets C ask <em>which</em> scope is calling (step 05), but it does not duplicate C storage.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">2. In the lab, two instances share the static counter. On the cycle where both <em>load</em>, what do they print?</p>
+<label><input type="radio" value="a"> Both print the value loaded by whichever instance ran last</label>
+<label><input type="radio" value="b"> Each prints its own loaded value: the bug is invisible on that cycle</label>
+<label><input type="radio" value="c"> X, because the two writes collide</label>
+<div class="why">Each call writes the shared variable and reads it straight back in the same call, so each instance sees its own value (u2: 10, u1: 120). Only the next read-modify-write (count) exposes the sharing: u2 then prints 121. There is no X: DPI with <code>bit</code> is 2-state and the calls are sequential.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">3. What is the C type of an SV <code>chandle</code> argument in the generated <code>Vtop__Dpi.h</code>?</p>
+<label><input type="radio" value="a"> <code>void*</code></label>
+<label><input type="radio" value="b"> <code>svHandle</code></label>
+<label><input type="radio" value="c"> <code>uint64_t</code></label>
+<label><input type="radio" value="d"> whatever pointer type the C function declares</label>
+<div class="why">The LRM maps chandle to <code>void*</code>, and the header says so: <code>extern int counter7(void* inst, …)</code>. Verilator stores it internally as a 64-bit integer, but the C-visible type is <code>void*</code>. (<code>svScope</code> is the opaque handle type for scopes, a different thing.) You may declare <code>c7*</code> in your own definition and it links, but then the header include fails to compile.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">4. Sample 12.9 declares <code>counter7(c7 *inst, …)</code> while SV passes a <code>chandle</code>. Without including <code>Vtop__Dpi.h</code>, what happens in Verilator?</p>
+<label><input type="radio" value="a"> Compile error: conflicting types</label>
+<label><input type="radio" value="b"> Link error: unresolved symbol</label>
+<label><input type="radio" value="c"> It builds and runs correctly</label>
+<label><input type="radio" value="d"> It builds and crashes at the first call</label>
+<div class="why">C-linkage symbols carry no parameter types, so the linker matches <code>_counter7</code> by name, and <code>c7*</code> and <code>void*</code> have the same representation. The mismatch is caught only when the definition meets the generated prototype (answer a, with the include).</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">5. Which of these did Verilator 5.052 reject under <code>--lint-only -Wall</code>?</p>
+<label><input type="radio" value="a"> <code>g = h + 1;</code> on chandles</label>
+<label><input type="radio" value="b"> a chandle member in a <code>struct packed</code></label>
+<label><input type="radio" value="c"> <code>assign g = h;</code></label>
+<label><input type="radio" value="d"> <code>always @(h)</code></label>
+<div class="why">All four are illegal per IEEE 1800-2023 §6.14, but Verilator models a chandle as a 64-bit integer and only errors on the packed struct (<code>int x = h</code> got a width warning). Code that compiles in Verilator is not proof that it is legal SV.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+<p class="qq">6. The SV side calls <code>counter7(h, …)</code> with a chandle that was never assigned, and the C function dereferences it without a check. Most likely outcome?</p>
+<label><input type="radio" value="a"> SV reports a null-handle error and continues</label>
+<label><input type="radio" value="b"> The call is skipped</label>
+<label><input type="radio" value="c"> C receives a pointer to a zero-initialized dummy object</label>
+<label><input type="radio" value="d"> The simulator process crashes (SIGSEGV), with no SV error and no <code>final</code> blocks</label>
+<div class="why">The chandle is null, C gets <code>NULL</code>, and the dereference is a segmentation fault in the simulator's own process (lab: exit status 139). SV has no chance to report anything. Guard handles at every C entry point.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">7. Why can't SV import a C++ member function like <code>Counter7::count</code> directly?</p>
+<label><input type="radio" value="a"> DPI forbids C++ code</label>
+<label><input type="radio" value="b"> Imports are bound by symbol name at link time, and a method also needs an object (<code>this</code>) that exists only at run time</label>
+<label><input type="radio" value="c"> Member functions cannot take <code>svBitVecVal*</code> arguments</label>
+<div class="why">That is §12.3.2's point: you need a free function with a fixed address and C linkage that receives the object pointer as a normal argument (the chandle) and calls the method. DPI works fine with C++ code, as long as the entry points have C linkage.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">8. An SV wrapper class holds a chandle to a C++ object. The test does <code>c = new; … c = null;</code> and never calls <code>free()</code>. What happens to the C++ object?</p>
+<label><input type="radio" value="a"> SV garbage collection calls its destructor</label>
+<label><input type="radio" value="b"> It is freed at the next <code>$finish</code></label>
+<label><input type="radio" value="c"> It leaks: SV reclaims the wrapper, but nothing frees the C++ object</label>
+<div class="why">SV has no destructors, and its collector does not know what a chandle points to. The lab leaked 100 C++ counters this way (<code>live=101</code>). The OS reclaims everything when the process exits, which is why the leak only bites in long regressions.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">9. <code>c2 = new c1;</code> where the class holds <code>local chandle inst</code>. Afterwards:</p>
+<label><input type="radio" value="a"> c1 and c2 drive the same C++ object; the class constructor did not run</label>
+<label><input type="radio" value="b"> c2 owns a new C++ object, because <code>new</code> calls the constructor</label>
+<label><input type="radio" value="c"> c2.inst is null: <code>local</code> members are not copied</label>
+<div class="why"><code>new c1</code> is a shallow copy: it copies every property, including the chandle, without calling <code>new()</code>. Lab: <code>c1=1 c2=1 live=1 wrappers=1</code>. After <code>c1.free()</code>, c2 holds a dangling pointer. <code>local</code> restricts access, not copying.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">10. Where does Ex. 12.4's "total calls across all instances" counter belong?</p>
+<label><input type="radio" value="a"> In the per-instance heap struct</label>
+<label><input type="radio" value="b"> In an SV <code>local</code> member of each wrapper object</label>
+<label><input type="radio" value="c"> In a C <code>static</code> (or an SV class <code>static</code>)</label>
+<div class="why">A quantity shared by all instances needs a home shared by all instances: one of the top row of Fig. 0.6. That is the legitimate use of static storage. Per-instance places hold one count per instance, which is the other half of the exercise.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">11. A stateful function is imported as <code>pure</code>. In the lab, how many of 13 calls did Verilator 5.052 execute, and what does that prove?</p>
+<label><input type="radio" value="a"> 3; Verilator removes unused pure calls, so <code>pure</code> must never be used</label>
+<label><input type="radio" value="b"> All 13; it proves nothing about other tools or versions, since the LRM allows removing them</label>
+<label><input type="radio" value="c"> 13; so <code>pure</code> has no effect and is safe to use for anything</label>
+<div class="why">A single measurement shows what one version did, not what the standard guarantees. The LRM permits eliminating or merging pure calls. And in Verilator <code>pure</code> does change something real: it lets the call run on several threads (0.13).</div>
+</div>
+
+<div class="quiz" data-answer="d">
+<p class="qq">12. Built with <code>verilator --threads 2</code> and default options, which imports may be called from more than one OS thread?</p>
+<label><input type="radio" value="a"> None: Verilator always serializes DPI</label>
+<label><input type="radio" value="b"> All imports</label>
+<label><input type="radio" value="c"> Only <code>context</code> imports</label>
+<label><input type="radio" value="d"> Only <code>pure</code> imports</label>
+<div class="why">The default <code>--threads-dpi pure</code> treats pure imports as thread-safe. The lab saw 2 distinct thread ids for the pure import and 1 for the non-pure one. <code>--threads-dpi none</code> serializes everything; <code>all</code> allows every import on any thread.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">13. Why does the corrected Sample 12.9 need <code>(c7*)malloc(...)</code> with an explicit cast in this tutorial, when plain C does not?</p>
+<label><input type="radio" value="a"> Because <code>svdpi.h</code> redefines <code>malloc</code></label>
+<label><input type="radio" value="b"> Because Verilator compiles <code>.c</code> files with the C++ compiler, and C++ has no implicit conversion from <code>void*</code></label>
+<label><input type="radio" value="c"> Because chandles are 64-bit</label>
+<div class="why">The lab's build log shows clang <code>treating 'c' input as 'c++'</code>. Your "C" file is C++ in a Verilator flow: casts from <code>void*</code> and <code>extern "C"</code> are required. Commercial flows usually compile <code>.c</code> files as C, so portable DPI code is written to compile both ways.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">14. A module creates its model in <code>initial</code> and frees it in <code>final</code>. Another module's <code>final</code> block prints the live-object count. What will it print?</p>
+<label><input type="radio" value="a"> Undefined: the order of <code>final</code> blocks is unspecified</label>
+<label><input type="radio" value="b"> 0, because final blocks run in reverse instantiation order</label>
+<label><input type="radio" value="c"> The count before any free, because final blocks run in declaration order</label>
+<div class="why">IEEE 1800 does not order <code>final</code> blocks. In the lab Verilator ran <code>top</code>'s first (it printed <code>live=2</code>), then u2's, then u1's. Do end-of-test leak checks somewhere that runs after all frees, e.g. in C++ at process exit, or explicitly after you call the frees yourself.</div>
+</div>
+
+<h2 id="s4"><span class="no">§4 · Lab</span>Static vs instance state, handles, C++ wrappers, leaks, threads</h2>
+<h4>Run it</h4>
+<pre class="out"><code>cd tutorial/03_state_and_handles/lab
+python3 check.py              # builds ~22 models with Verilator, runs them, asserts 47 facts (~15 s with ccache, ~1 min cold)
+python3 check.py --no-run     # re-check the logs in build/ without rebuilding</code></pre>
+<p>One <code>Segmentation fault: 11</code> line on stderr during <code>run.sh</code> is expected: it is the <code>booksig_null</code> experiment (0.6). Logs are in <code>build/&lt;name&gt;.log</code>, build output in <code>build/&lt;name&gt;.build</code>, and each model's generated <code>Vtop__Dpi.h</code> in <code>build/vl_&lt;name&gt;/</code>.</p>
+<h4>Predict first</h4>
+<ol>
+<li>Two instances sharing the static counter, load 120 and 10, then count twice: what does each print? (0.3)</li>
+<li>Same SV file, C model vs C++ model: same output?</li>
+<li>Book signature <code>c7*</code>: builds? With the header included?</li>
+<li>After 100 <code>tmp = new</code> without <code>free()</code>: how many C++ objects are alive?</li>
+<li>With <code>--threads 2</code>: on how many OS threads does a pure import run? A non-pure one?</li>
+</ol>
+<h4>Experiments and results (Verilator 5.052, macOS x86_64)</h4>
+<div class="tbl"><table>
+<tr><th>Build / log</th><th>Files</th><th>What it shows</th><th>Result</th></tr>
+<tr><td class="mono">static</td><td><code>static_counter.sv/.c</code></td><td>Sample 12.7 state shared by 2 instances</td><td>u2: 1, 10, 121, 123 · u1: 2, 120, 122, 124</td></tr>
+<tr><td class="mono">static_reset</td><td>same, <code>+hold_reset</code></td><td>T6: sharing invisible under reset</td><td>all 0</td></tr>
+<tr><td class="mono">chandle</td><td><code>chandle_counter.sv/.c</code></td><td>per-instance state, initial/final ownership</td><td>u2: 1, 10, 11, 12 · u1: 1, 120, 121, 122 · live 2 → 0</td></tr>
+<tr><td class="mono">cpp</td><td><code>chandle_counter.sv</code> + <code>counter7.cpp</code></td><td>Samples 12.13/12.14 behind the same SV</td><td>identical LOG lines</td></tr>
+<tr><td class="mono">chandle_null / booksig_null</td><td><code>+null</code></td><td>null chandle with / without guard</td><td>−1 and continues / SIGSEGV, exit 139</td></tr>
+<tr><td class="mono">booksig / booksigh</td><td><code>book_sig.c</code> ± <code>-DCHECK_PROTO</code></td><td><code>c7*</code> vs <code>void*</code></td><td>links and runs / <code>conflicting types for 'counter7'</code></td></tr>
+<tr><td class="mono">nocxx / nocxxh</td><td><code>nocxx.cpp</code> ± header</td><td>missing <code>extern "C"</code></td><td>link error <code>"_counter7_new"</code> / links (header gives C linkage)</td></tr>
+<tr><td class="mono">tlm</td><td><code>tlm.sv/.cpp</code></td><td>Samples 12.15–12.17, shallow copy, leak, dangling</td><td>get 0 · shallow live 1 · leak live 101 · after free c2 dangling</td></tr>
+<tr><td class="mono">pure / honest</td><td><code>pure_lie.sv</code>, <code>pure_honest.sv</code></td><td>stateful function imported as pure</td><td>13 calls in both</td></tr>
+<tr><td class="mono">thr1 / thr2 / thr2none / thr2all</td><td><code>threads.sv/.cpp</code></td><td>OS threads per import</td><td>pure: 1 / 2 / 1 / 2 · non-pure: 1 / 1 / 1 / 1</td></tr>
+<tr><td class="mono">chandle_rule1–6</td><td><code>neg/</code></td><td>§6.14 rules under lint</td><td>only packed-struct is an error; <code>int x = h</code> warns</td></tr>
+<tr><td class="mono">ex2, ex345, ex6, clone, fifo, registry</td><td><code>ex/</code></td><td>exercise solutions</td><td>see §2</td></tr>
+</table></div>
+<h4>What to look at</h4>
+<ul>
+<li><code>build/vl_chandle/Vtop__Dpi.h</code>: the C view of your imports. Note <code>void* inst</code> and the parameter names taken from the SV formals.</li>
+<li><code>build/booksigh.build</code>: the compiler comparing your definition with the header.</li>
+<li><code>build/nocxx.build</code>, and <code>nm build/vl_nocxx/nocxx.o | grep counter7</code>: mangled <code>__Z12counter7_newv</code> vs the <code>_counter7_new</code> that Verilator references.</li>
+<li>Edit <code>tlm.sv</code> to call <code>c2.count()</code> after <code>c1.free()</code> and run it a few times: undefined behavior that usually "works". Then run it under <code>-CFLAGS -fsanitize=address -LDFLAGS -fsanitize=address</code> to see it caught (not part of check.py).</li>
+</ul>
+
+<h2 id="s5"><span class="no">§5 · Cheat sheet</span>State and handles on one page</h2>
+<div class="tbl"><table>
+<tr><th>Construct</th><th>SV declaration</th><th>C / C++ side</th><th>Pitfall</th></tr>
+<tr><td>Static state</td><td><code>function void f(...)</code></td><td><code>static T s;</code> in the function</td><td>One copy per process; instances corrupt each other</td></tr>
+<tr><td>Constructor</td><td><code>function chandle m_new(input ... init)</code></td><td><code>void* m_new(...)</code> → <code>new</code>/<code>malloc</code></td><td>Cast <code>malloc</code> (compiled as C++)</td></tr>
+<tr><td>Operation</td><td><code>function int m_op(input chandle h, ...)</code></td><td><code>int m_op(void* h, ...)</code>, null check first</td><td>Null → SIGSEGV kills the simulator</td></tr>
+<tr><td>Destructor</td><td><code>function void m_free(input chandle h)</code></td><td><code>delete static_cast&lt;M*&gt;(h)</code></td><td>SV never calls it for you</td></tr>
+<tr><td>C++ method</td><td>as an operation</td><td><code>extern "C"</code> wrapper → <code>static_cast&lt;M*&gt;(h)-&gt;op()</code></td><td>No <code>extern "C"</code> → mangled name, link error</td></tr>
+<tr><td>Return a vector</td><td><code>output bit [N-1:0] v</code></td><td><code>svBitVecVal* v</code></td><td>Imports return only scalars, <code>chandle</code>, <code>string</code></td></tr>
+<tr><td>SV wrapper</td><td><code>class M; local chandle h; ... endclass</code></td><td>—</td><td><code>new c1</code> copies the chandle (shared, then dangling)</td></tr>
+<tr><td>Module owner</td><td><code>initial h = m_new(); final m_free(h);</code></td><td>—</td><td><code>final</code> order unspecified</td></tr>
+<tr><td>Prototype check</td><td>—</td><td><code>#include "Vtop__Dpi.h"</code></td><td>Without it, type mismatches link silently</td></tr>
+<tr><td>Threads</td><td><code>pure</code> or not</td><td>mutex/atomic for shared state</td><td><code>--threads N</code> runs pure imports concurrently</td></tr>
+</table></div>
+<h4>Rules</h4>
+<ol>
+<li>State that belongs to an instance goes on the heap, reached through a chandle. Statics are only for things that are truly global.</li>
+<li>A chandle is opaque: store it, compare it with <code>null</code>, pass it back. Verilator lets you do more; the LRM and other tools don't.</li>
+<li>Every C entry point that takes a handle checks it for null.</li>
+<li>Every DPI source file includes the generated prototype header and wraps its entry points in <code>extern "C"</code>.</li>
+<li>Every <code>_new</code> has a <code>_free</code>; a live-object counter that must reach 0 is the cheapest leak test.</li>
+<li>Pick one copy policy per wrapper class: no copies, or deep <code>copy()</code>.</li>
+<li>Test instance isolation with two instances doing read-modify-write in the same time step; reset/load tests can't see sharing.</li>
+<li>Stateful ⇒ not <code>pure</code>. <code>pure</code> in Verilator also means "may run on any thread".</li>
+</ol>
+
+<p class="foot">Spear &amp; Tumbush, <i>SystemVerilog for Verification</i>, 3rd ed. (Springer, 2012), §12.2–12.3 and Ex. 12.2–12.6; IEEE 1800-2023 §6.14 (chandle), §35 (DPI), Annex H; Verilator manual, <code>--threads-dpi</code>. Lab: Verilator 5.052, Apple clang, macOS x86_64. Every output in this page comes from <code>03_state_and_handles/lab</code> and is asserted by <code>check.py</code>.</p>
+</main>
+</div>
+</body>
+</html>

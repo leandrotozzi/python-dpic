@@ -1,0 +1,805 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Step 06: C Golden Models</title>
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../assets/guide.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/contrib/auto-render.min.js"></script>
+<script defer src="../assets/quiz.js"></script>
+<script>
+try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
+document.addEventListener('DOMContentLoaded',function(){
+  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
+  var toc=document.getElementById('toc');
+  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
+  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
+  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
+  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
+});
+function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
+function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
+</script>
+<style>
+pre.sv{font-size:13px;line-height:1.5}
+pre.sv .c{color:var(--muted);font-style:italic}
+pre.sv .k{color:var(--acc);font-weight:600}
+p code,li code,td code{overflow-wrap:anywhere}
+td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.stepnav{display:flex;justify-content:space-between;gap:12px;font-family:var(--font-mono);font-size:12.5px;margin:8px 0 0}
+</style>
+</head>
+<body>
+<svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-acc" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-2" d="M0,1 L10,5 L0,9 z"/></marker>
+</defs></svg>
+
+<div class="page">
+<details class="toc" id="toc"><summary>Contents</summary><nav><ol>
+<li class="grp">0 · Tutorial</li>
+<li><a href="#tutorial">The step in one idea</a></li>
+<li><a href="#t-what">0.1 What a golden model is</a></li>
+<li><a href="#t-spec">0.2 The two DUTs and their specs</a></li>
+<li><a href="#t-contract">0.3 Designing the DPI contract</a></li>
+<li><a href="#t-cmodel">0.4 The C models</a></li>
+<li><a href="#t-tb">0.5 The layered testbench</a></li>
+<li><a href="#t-where">0.6 Where to compare</a></li>
+<li><a href="#t-stim">0.7 Stimulus, corners and seeds</a></li>
+<li><a href="#t-mutants">0.8 Proving the checker fires</a></li>
+<li><a href="#t-cost">0.9 What a DPI call costs</a></li>
+<li><a href="#t-swap">0.10 Swapping the implementation</a></li>
+<li><a href="#t-recipe">0.11 Recipe</a></li>
+<li class="grp">1–5 · Practice</li>
+<li><a href="#s1">1 · Objectives</a></li>
+<li><a href="#s2">2 · Exercises</a></li>
+<li><a href="#s3">3 · Quiz</a></li>
+<li><a href="#s4">4 · Lab</a></li>
+<li><a href="#s5">5 · Cheat sheet</a></li>
+</ol></nav></details>
+
+<main>
+<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
+<div class="stepnav"><a href="../05_export_and_context/guide.html">← 05 Export and context</a><a href="../07_embedding_python/guide.html">07 Embedding Python →</a></div>
+<p class="kicker">DPI-C tutorial · Step 06 · End of Part A</p>
+<h1>The golden-model pattern: a C reference model behind a self-checking testbench</h1>
+<p class="deck">Steps 01–05 taught the mechanics of DPI: types, handles, arrays, exports. This step puts them to work on the job DPI exists for in verification: an independent C model of the DUT's spec, called from a scoreboard, compared bit-exactly, and proven to fire. The SV half of the contract is built so step 08 can replace the C with Python without touching a line of SystemVerilog.</p>
+<p class="meta"><span>Prereqs: <a href="../01_first_call/guide.html">01</a>–<a href="../05_export_and_context/guide.html">05</a></span><span>Book: Spear &amp; Tumbush ch. 12 (§12.2–12.4), ch. 1 (layered TB)</span><span>Lab: <code>lab/check.py</code>, Verilator 5.052</span></p>
+<div class="tools"><button onclick="setAll(true)">Open all</button><button onclick="setAll(false)">Close all</button></div>
+
+<h2 id="tutorial"><span class="no">§0 · Tutorial</span>The step in one idea</h2>
+<p class="lead">A testbench without a reference model can only tell you that the DUT did <em>something</em>. A scoreboard with a reference model tells you whether it did the <em>right</em> thing, on every transaction, for stimulus nobody wrote by hand. The reference model is usually written in a software language: the spec is already there (a standard, a MATLAB or Python model from the algorithm team), software is faster to write than RTL, and an independent implementation does not share the RTL's bugs. DPI-C is the standard way to call that model from SystemVerilog.</p>
+<p>This step builds the whole pattern on two small DUTs from <a href="../common/rtl/crc32_stream.sv"><code>common/rtl</code></a>: a byte-streaming CRC-32 and an 8-tap fixed-point FIR. Along the way it answers the questions you hit on a real block. How should the DPI functions be shaped? Should the model be called per transaction or per block? When should the comparison happen? How do you know the checker can fail at all? What does a DPI call cost, and what dominates the run time instead? Every number on this page comes from <a href="#s4">the lab</a> and is asserted by <code>check.py</code>.</p>
+
+<!-- 0.1 -->
+<h3 id="t-what"><span class="no">0.1</span>What a golden model is (and what it is not)</h3>
+<p>A <b>golden model</b> (also called a <b>reference model</b> or <b>predictor</b>) is an implementation of the DUT's <em>specification</em> that runs next to the simulation and predicts what the DUT should output for the inputs it actually received. Spear's chapter 1 places it inside the layered testbench. The generator creates transactions, the driver turns them into pin activity, the monitor turns pin activity back into transactions, and the scoreboard compares observed results against the model's predictions (§1.10). Chapter 12 supplies the mechanism: the model lives in C and the scoreboard calls it through <code>import "DPI-C"</code>.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 300" role="img" aria-label="Layered testbench: generator, driver, DUT, monitor and scoreboard in SystemVerilog; the scoreboard calls the golden model in C across the DPI boundary">
+<rect class="ghost" x="10" y="10" width="520" height="280" rx="12"/><text class="ttl" x="24" y="32">SYSTEMVERILOG (simulator)</text>
+<rect class="ghost" x="565" y="10" width="145" height="280" rx="12"/><text class="ttl" x="578" y="32">C / C++</text>
+<rect class="box soft" x="30" y="56" width="130" height="44" rx="8"/><text class="lbl" x="95" y="78">generator</text>
+<rect class="box" x="30" y="140" width="130" height="44" rx="8"/><text class="lbl" x="95" y="162">driver</text>
+<rect class="box hot" x="210" y="130" width="120" height="64" rx="10"/><text class="lbl" x="270" y="154">DUT</text><text class="note mid" x="270" y="176">RTL</text>
+<rect class="box" x="380" y="140" width="130" height="44" rx="8"/><text class="lbl" x="445" y="162">monitor</text>
+<rect class="box" x="380" y="226" width="130" height="44" rx="8"/><text class="lbl" x="445" y="248">scoreboard</text>
+<rect class="box hot" x="580" y="210" width="112" height="76" rx="10"/><text class="lbl" x="636" y="236">golden</text><text class="lbl" x="636" y="256">model</text><text class="note mid" x="636" y="276">golden.c</text>
+<path class="e" d="M95,100 V140" marker-end="url(#ah)"/><text class="t" x="102" y="124">txn</text>
+<path class="e" d="M160,162 H210" marker-end="url(#ah)"/><text class="t" x="166" y="154">pins</text>
+<path class="e" d="M330,162 H380" marker-end="url(#ah)"/><text class="t" x="336" y="154">pins</text>
+<path class="e" d="M445,184 V226" marker-end="url(#ah)"/><text class="t" x="452" y="208">in &amp; out txns</text>
+<path class="e hot" d="M510,240 H580" marker-end="url(#ah-acc)"/><text class="t" x="512" y="232">x, h</text>
+<path class="e hot" d="M580,262 H510" marker-end="url(#ah-acc)"/><text class="t" x="506" y="282">y_exp</text>
+<path class="e dash" d="M550,40 V290"/><text class="t" x="555" y="56">DPI</text>
+<path class="e faint" d="M190,120 V60 H360 V120" /><text class="note" x="196" y="78">the DUT never sees the model:</text><text class="note" x="196" y="94">only the scoreboard calls it</text>
+</svg>
+<figcaption><b>Fig. 1</b>The layered testbench of Spear ch. 1 with the reference model moved across the DPI boundary. Monitors observe pins, never TB variables; the scoreboard owns the model's handle (<code>h</code>), sends it the inputs the monitor saw, and compares the returned prediction against the observed output.</figcaption>
+</figure>
+
+<p>Three properties separate a useful golden model from a second copy of the RTL:</p>
+<ul>
+<li><b>Independent.</b> It implements the <em>spec</em>, ideally with a different algorithm and by a different person. The CRC model in this step uses a 256-entry lookup table, while the RTL does eight bitwise shift/XOR steps per byte. If both were written from the same misreading of the polynomial, they would agree with each other and both be wrong. That is why the model is also anchored to an external fact: the catalogue check value <code>CRC-32("123456789") = 0xCBF43926</code>, which the TB prints at time 0.</li>
+<li><b>Bit-exact where the spec is exact.</b> A DSP model in floating point can only check "close enough". The FIR spec here fixes the arithmetic (35-bit accumulator, round half-up, saturate to int16), so the C model reproduces it exactly and the scoreboard compares with <code>!==</code>, with no tolerance window.</li>
+<li><b>Untimed.</b> The model does not know about clocks, latency or valid gaps. It sees a sequence of inputs and returns a sequence of outputs. Pairing outputs with inputs is the scoreboard's job, and keeping that out of the model is what makes it reusable (and swappable for Python in <a href="../08_python_golden_model/guide.html">step 08</a>).</li>
+</ul>
+<div class="callout note" style="--c-label:'Not a golden model'"><p>A model that is <em>cycle-accurate</em> (it reproduces the DUT's pipeline, latency and stalls) is a different tool. It is useful for performance work, but it tends to become a second RTL with the same bugs. Keep timing in the testbench (monitor and scoreboard) and function in the model.</p></div>
+
+<!-- 0.2 -->
+<h3 id="t-spec"><span class="no">0.2</span>The two DUTs and their specs</h3>
+<p>Both DUTs live in <code>tutorial/common/rtl</code> and are shared with steps 07–08. What matters here is the spec each one implements, because that is what the model encodes.</p>
+<div class="tbl"><table>
+<tr><th>DUT</th><th>Interface</th><th>Spec (what the model must reproduce)</th></tr>
+<tr><td><code>crc32_stream</code></td><td><code>clear</code>, <code>in_valid</code>, <code>in_data[7:0]</code> → <code>crc[31:0]</code></td><td>CRC-32/IEEE 802.3 (Ethernet, zip, Python's <code>zlib.crc32</code>): reflected, polynomial <code>0xEDB88320</code>, init <code>0xFFFFFFFF</code>, final XOR <code>0xFFFFFFFF</code>. One byte per clock when <code>in_valid</code>. <code>clear</code> has priority over <code>in_valid</code> and restarts the message. <code>crc</code> is combinational from the register: it is the CRC of every byte accepted so far.</td></tr>
+<tr><td><code>fir8</code></td><td><code>coef[8]</code>, <code>in_valid</code>, <code>in_x</code> → <code>out_valid</code>, <code>out_y</code> (all Q1.15 signed 16-bit)</td><td>$y[n] = \mathrm{sat}_{16}\big(\lfloor (\textstyle\sum_{k=0}^{7} c_k\,x[n-k] + 2^{14}) / 2^{15} \rfloor\big)$. Lossless 35-bit accumulator, round half-up, saturate to $[-32768, 32767]$. Latency 1 clock. The delay line starts at 0 and only shifts on <code>in_valid</code>.</td></tr>
+</table></div>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 210" role="img" aria-label="FIR8 datapath widths: eight 16x16 products of 32 bits, sum of 35 bits, add 2^14, arithmetic shift right 15, saturate to 16 bits">
+<text class="ttl" x="14" y="24">FIR8 OUTPUT PATH (BIT WIDTHS)</text>
+<rect class="box soft" x="14" y="50" width="120" height="110" rx="8"/><text class="lbl" x="74" y="80">8 × (16×16)</text><text class="note mid" x="74" y="104">c[k]·x[n−k]</text><text class="t mid" x="74" y="130">32 b each</text>
+<path class="e" d="M134,105 H170" marker-end="url(#ah)"/>
+<rect class="box" x="170" y="70" width="110" height="70" rx="8"/><text class="lbl" x="225" y="96">Σ</text><text class="t mid" x="225" y="122">35 b (3 guard)</text>
+<path class="e" d="M280,105 H316" marker-end="url(#ah)"/>
+<rect class="box" x="316" y="70" width="100" height="70" rx="8"/><text class="lbl" x="366" y="96">+ 2¹⁴</text><text class="t mid" x="366" y="122">round</text>
+<path class="e" d="M416,105 H452" marker-end="url(#ah)"/>
+<rect class="box" x="452" y="70" width="100" height="70" rx="8"/><text class="lbl" x="502" y="96">&gt;&gt;&gt; 15</text><text class="t mid" x="502" y="122">floor, 20 b</text>
+<path class="e" d="M552,105 H588" marker-end="url(#ah)"/>
+<rect class="box hot" x="588" y="70" width="118" height="70" rx="8"/><text class="lbl" x="647" y="96">sat16</text><text class="t mid" x="647" y="122">[−32768, 32767]</text>
+<text class="note" x="170" y="176">mutant 4: keep only 32 bits here</text><path class="e faint" d="M225,140 V162"/>
+<text class="note" x="316" y="196">mutant 1: drop the +2¹⁴</text><path class="e faint" d="M366,140 V182"/>
+<text class="note" x="560" y="176">mutant 2: wrap</text><path class="e faint" d="M647,140 V162"/>
+</svg>
+<figcaption><b>Fig. 2</b>Where the FIR's spec decisions live, and the three deliberate model bugs (<em>mutants</em>) the lab uses in <a href="#t-mutants">0.8</a> to prove the checker fires. Eight 32-bit products need $\lceil\log_2 8\rceil = 3$ guard bits, hence 35.</figcaption>
+</figure>
+
+<p>Ambiguity in the spec is the most common source of "model bugs" that are really spec bugs. Before writing a line of C, settle every one of these: rounding mode (half-up, half-even, truncate), what an arithmetic shift does to negatives (floor), saturation versus wrap, reset state, what happens when two controls are active at once (<code>clear</code> with <code>in_valid</code>), and the bit order of a CRC. The lab drives <code>clear</code> together with a stray byte on purpose (<code>clear_with_valid</code>) so that the priority rule is exercised, not assumed.</p>
+
+<!-- 0.3 -->
+<h3 id="t-contract"><span class="no">0.3</span>Designing the DPI contract</h3>
+<p>The contract is the set of <code>import "DPI-C"</code> declarations. Put them in a package of their own, <code>lab/golden_pkg.sv</code>. Everything on the SV side depends on that file and nothing else, so anything that defines these C symbols can serve as the model. It can be <code>golden.c</code>, a C++ class (<a href="#ex9">exercise 9</a>), or the embedded-Python bridge of step 08.</p>
+<pre class="sv"><code><span class="k">package</span> golden_pkg;
+  <span class="c">// CRC-32: incremental, state behind a chandle (one call per byte)</span>
+  <span class="k">import</span> "DPI-C" <span class="k">function</span> chandle      crc32_new();
+  <span class="k">import</span> "DPI-C" <span class="k">function</span> void         crc32_free  (<span class="k">input</span> chandle h);
+  <span class="k">import</span> "DPI-C" <span class="k">function</span> void         crc32_clear (<span class="k">input</span> chandle h);
+  <span class="k">import</span> "DPI-C" <span class="k">function</span> int unsigned crc32_update(<span class="k">input</span> chandle h, <span class="k">input</span> byte unsigned b);
+  <span class="c">// CRC-32: whole message, stateless. msg must be a FIXED-size array (Verilator)</span>
+  <span class="k">import</span> "DPI-C" <span class="k">pure function</span> int unsigned crc32_msg(<span class="k">input</span> byte unsigned msg[], <span class="k">input</span> int len);
+  <span class="c">// FIR: stateful, per sample or per block</span>
+  <span class="k">import</span> "DPI-C" <span class="k">function</span> chandle  fir8_new  (<span class="k">input</span> shortint coef[8]);
+  <span class="k">import</span> "DPI-C" <span class="k">function</span> void     fir8_free (<span class="k">input</span> chandle h);
+  <span class="k">import</span> "DPI-C" <span class="k">function</span> shortint fir8_step (<span class="k">input</span> chandle h, <span class="k">input</span> shortint x);
+  <span class="k">import</span> "DPI-C" <span class="k">function</span> void     fir8_block(<span class="k">input</span> chandle h, <span class="k">input</span> shortint x[],
+                                              <span class="k">output</span> shortint y[], <span class="k">input</span> int n);
+<span class="k">endpackage</span></code></pre>
+<p>Each choice in that file is a decision you will make again on a real block:</p>
+<ul>
+<li><b>State lives behind a <code>chandle</code></b> (<a href="../03_state_and_handles/guide.html">step 03</a>). A FIR and an incremental CRC have memory. With a static C variable, two DUT instances (or two scoreboards for two channels) would share one model. With <code>new/free</code> pairs, each scoreboard owns its own model.</li>
+<li><b>Two granularities for the same function.</b> <code>crc32_update</code>/<code>fir8_step</code> are called once per transaction as the monitor sees it. <code>crc32_msg</code>/<code>fir8_block</code> take a whole array. The per-item form is what you need to check every cycle. The block form amortizes call overhead, which hardly matters for C (<a href="#t-cost">0.9</a>) and matters a lot for Python (step 08).</li>
+<li><b><code>pure</code> only where it is true.</b> <code>crc32_msg</code>'s result depends only on its arguments, so it is <code>pure</code> (the simulator may skip or reorder calls). <code>fir8_step</code> mutates hidden state; marking it <code>pure</code> would let the simulator eliminate "redundant" calls and silently desynchronize the model (<a href="../05_export_and_context/guide.html">step 05</a>).</li>
+<li><b>Plain C types.</b> <code>shortint</code> ↔ <code>short</code>, <code>byte unsigned</code> ↔ <code>unsigned char</code>, <code>int unsigned</code> ↔ <code>unsigned int</code>: no <code>svBitVecVal</code> packing (<a href="../02_data_types/guide.html">step 02</a>). Fixed-size <code>shortint coef[8]</code> arrives as <code>const short*</code>. The <code>[]</code> formals arrive as <code>svOpenArrayHandle</code> (<a href="../04_arrays_structs_strings/guide.html">step 04</a>).</li>
+<li><b>Fixed buffers plus an explicit length.</b> The natural signature for a variable-length message is <code>crc32_msg(input byte unsigned msg[])</code>, called with a dynamic array. Verilator 5.052 rejects that at elaboration (below), so the TB copies into a fixed-size buffer and passes the length. Commercial simulators accept dynamic-array actuals for open-array formals (IEEE 1800-2023 §35.5.6.1), but the length argument costs nothing and keeps the contract portable.</li>
+</ul>
+<div class="callout asic" style="--c-label:'In Verilator'"><p>Passing a dynamic array (or a queue) to an open-array DPI formal fails at elaboration, pointing at the <em>import</em> line:</p>
+<pre class="sv"><code>%Error-UNSUPPORTED: golden_pkg.sv:10:75: Unsupported: DPI argument of type DYNARRAYDTYPE
+%Error: Internal Error: ... ../V3Task.cpp:759: No non-inline task associated with this task call?</code></pre>
+<p>A fixed-size unpacked array as the actual works, both as <code>input</code> and <code>output</code>, and <code>svSize</code>, <code>svLow</code>, <code>svGetArrayPtr</code> and <code>svGetArrElemPtr1</code> behave as Annex H says. Recorded in <code>tutorial/NOTES.md</code>.</p></div>
+<div class="callout hv"><p>Design the contract as if the implementation will change, because it will. A model often starts in C, is replaced by the algorithm team's Python or MATLAB, and ends up as a compiled library from another group. If the SV side only depends on <code>golden_pkg.sv</code>, each swap is a link-line change. Step 08 makes that literal: same <code>golden_pkg.sv</code>, same testbenches, a different object behind the symbols.</p></div>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 230" role="img" aria-label="The seam: fir_tb.sv and crc_tb.sv import golden_pkg; golden_pkg declares C symbols; the linker resolves them to golden.c, golden_cpp.cpp, or the Python bridge of step 08">
+<rect class="box" x="14" y="40" width="150" height="44" rx="8"/><text class="lbl" x="89" y="62">fir_tb.sv</text>
+<rect class="box" x="14" y="110" width="150" height="44" rx="8"/><text class="lbl" x="89" y="132">crc_tb.sv</text>
+<rect class="box" x="14" y="180" width="150" height="40" rx="8"/><text class="lbl" x="89" y="200">bench.sv</text>
+<rect class="box hot" x="220" y="90" width="150" height="84" rx="10"/><text class="lbl" x="295" y="118">golden_pkg.sv</text><text class="note mid" x="295" y="142">9 imports</text><text class="note mid" x="295" y="160">= the contract</text>
+<path class="e" d="M164,62 H200 V120 H220" marker-end="url(#ah)"/><path class="e" d="M164,132 H220" marker-end="url(#ah)"/><path class="e" d="M164,200 H200 V150 H220" marker-end="url(#ah)"/>
+<path class="e dash" d="M400,20 V220"/><text class="t end" x="394" y="218">link time</text>
+<rect class="box soft" x="430" y="30" width="276" height="50" rx="8"/><text class="lbl" x="568" y="50">golden.c</text><text class="note mid" x="568" y="70">C, this step</text>
+<rect class="box soft" x="430" y="100" width="276" height="50" rx="8"/><text class="lbl" x="568" y="120">ex/golden_cpp.cpp</text><text class="note mid" x="568" y="140">C++ classes, exercise 9</text>
+<rect class="box soft" x="430" y="170" width="276" height="50" rx="8"/><text class="lbl" x="568" y="190">Python bridge + zlib/numpy</text><text class="note mid" x="568" y="210">step 08</text>
+<path class="e hot" d="M370,132 H405 V55 H430" marker-end="url(#ah-acc)"/>
+<path class="e" d="M405,125 H430" marker-end="url(#ah)"/>
+<path class="e dash" d="M405,132 V195 H430" marker-end="url(#ah)"/>
+</svg>
+<figcaption><b>Fig. 3</b>The seam. Testbenches depend on the package; the package names C symbols; exactly one object file defines them. The lab proves the C++ swap: <code>fir_cpp</code> and <code>fir_c_ref</code> run the same seed and print the same digest and <code>PASS</code>.</figcaption>
+</figure>
+
+<!-- 0.4 -->
+<h3 id="t-cmodel"><span class="no">0.4</span>The C models</h3>
+<p><code>lab/golden.c</code> has two parts. The first is the CRC. A bitwise byte update builds the 256-entry table once, and the model itself uses the table. The code is short, and its structure is the point:</p>
+<pre class="sv"><code><span class="k">#include</span> "svdpi.h"
+<span class="k">#include</span> "Vtop__Dpi.h"   <span class="c">/* generated prototypes: a signature mismatch is a compile error */</span>
+
+<span class="k">static</span> uint32_t crc_tab[256];
+<span class="k">static inline</span> uint32_t crc_step(uint32_t s, uint8_t b) { <span class="k">return</span> (s &gt;&gt; 8) ^ crc_tab[(s ^ b) &amp; 0xFF]; }
+
+<span class="k">typedef struct</span> { uint32_t state; } crc_t;    <span class="c">/* register value, before the final inversion */</span>
+
+<span class="k">void</span>* crc32_new(<span class="k">void</span>) { crc_tab_init(); crc_t* c = malloc(<span class="k">sizeof</span> *c); c-&gt;state = 0xFFFFFFFFu; <span class="k">return</span> c; }
+<span class="k">void</span>  crc32_clear(<span class="k">void</span>* h) { ((crc_t*)h)-&gt;state = 0xFFFFFFFFu; }
+<span class="k">unsigned int</span> crc32_update(<span class="k">void</span>* h, <span class="k">unsigned char</span> b) {
+  crc_t* c = (crc_t*)h;
+  c-&gt;state = crc_step(c-&gt;state, b);
+  <span class="k">return</span> ~c-&gt;state;                            <span class="c">/* = the DUT's crc output after this byte */</span>
+}</code></pre>
+<p>Three details carry over to every model you write:</p>
+<ul>
+<li><b>Include the generated header.</b> Verilator writes <code>V&lt;top&gt;__Dpi.h</code> with the C prototype of every import (<a href="../01_first_call/guide.html">step 01</a>). Including it in the model turns a mismatched signature into a compile error instead of stack garbage at run time. It also supplies <code>extern "C"</code>, which matters because Verilator compiles <code>.c</code> files with the C++ compiler (<code>clang: warning: treating 'c' input as 'c++'</code>). Commercial flows generate the same header with a switch (Questa <code>-dpiheader</code>, VCS <code>-dpi_header</code>, Xcelium <code>-dpiheader</code>).</li>
+<li><b>Mirror the observable, not the implementation.</b> <code>crc32_update</code> returns <code>~state</code> because the DUT's port is <code>~state_q</code>. The model is free to store its state however it likes, but what it returns must match what the monitor can see on pins.</li>
+<li><b>Contract violations abort; mismatches do not.</b> A <code>len</code> larger than the buffer is a testbench bug, so <code>crc32_msg</code> prints the reason and calls <code>abort()</code>. A DUT that disagrees with the model is a <em>result</em>, so the model returns its prediction and the scoreboard decides. <a href="#ex12">Exercise 12</a> shows the abort: <code>crc32_msg: len=300 outside buffer of 256</code> and exit code 134 (SIGABRT).</li>
+</ul>
+<p>The FIR model is just as small. The accumulator is 64-bit, so the 35-bit sum can never overflow, and C's <code>&gt;&gt;</code> on a negative signed value is an arithmetic shift on every compiler you will meet. That shift is implementation-defined in C++17 and only guaranteed in C++20, but it matches SV's <code>&gt;&gt;&gt;</code>, which is floor division by a power of two.</p>
+<pre class="sv"><code><span class="k">typedef struct</span> { int16_t coef[8]; int16_t dly[8]; } fir_t;   <span class="c">/* dly[0] = x[n-1] */</span>
+
+<span class="k">static</span> int16_t fir_q15(<span class="k">const</span> fir_t* f, int16_t x) {
+  int64_t acc = (int64_t)f-&gt;coef[0] * x;
+  <span class="k">for</span> (<span class="k">int</span> k = 1; k &lt; 8; k++) acc += (int64_t)f-&gt;coef[k] * f-&gt;dly[k - 1];
+  int64_t r = (acc + (1 &lt;&lt; 14)) &gt;&gt; 15;                    <span class="c">/* round half-up, floor */</span>
+  <span class="k">return</span> (int16_t)(r &gt; 32767 ? 32767 : r &lt; -32768 ? -32768 : r);
+}
+<span class="k">short</span> fir8_step(<span class="k">void</span>* h, <span class="k">short</span> x) {                     <span class="c">/* predict, then shift */</span>
+  fir_t* f = (fir_t*)h;  int16_t y = fir_q15(f, x);  fir_push(f, x);  <span class="k">return</span> y;
+}
+<span class="k">void</span> fir8_block(<span class="k">void</span>* h, <span class="k">const</span> svOpenArrayHandle x, <span class="k">const</span> svOpenArrayHandle y, <span class="k">int</span> n) {
+  <span class="k">const short</span>* xp = svGetArrayPtr(x);  <span class="k">short</span>* yp = svGetArrayPtr(y);  <span class="c">/* NULL if not contiguous */</span>
+  <span class="k">for</span> (<span class="k">int</span> i = 0; i &lt; n; i++) yp[i] = fir8_step(h, xp[i]);
+}</code></pre>
+<div class="callout trap"><p><code>fir8_block</code> is written as a loop over <code>fir8_step</code> on purpose. If the block path were a separate implementation, stream mode and batch mode could disagree because of the <em>model</em>, and you would chase a DUT bug that does not exist. One arithmetic core with two entry points is the rule.</p></div>
+
+<!-- 0.5 -->
+<h3 id="t-tb"><span class="no">0.5</span>The layered testbench</h3>
+<p>Each DUT gets a small layered TB in one file (<code>lab/fir_tb.sv</code>, <code>lab/crc_tb.sv</code>): an interface with a clocking block, and a package with a transaction class, a driver, a monitor and a scoreboard. The structure is Spear's chapter 1 minus the generator/agent ceremony; UVM would split each class into a <code>uvm_sequence_item</code>, <code>uvm_driver</code>, <code>uvm_monitor</code> and <code>uvm_scoreboard</code> connected by analysis ports, but the DPI part is identical.</p>
+<p>The clocking block is what makes the monitor/scoreboard pairing trivial. Its inputs are sampled just before the clock edge (<code>#1step</code>), so at edge $k$ the monitor sees the input the DUT is <em>about to capture</em> and the output the DUT <em>registered at edge</em> $k-1$:</p>
+<pre class="sv"><code><span class="k">clocking</span> cb @(<span class="k">posedge</span> clk);                  <span class="c">// sample just before the edge, drive just after it</span>
+  <span class="k">output</span> in_valid, in_x;
+  <span class="k">input</span>  in_valid_s = in_valid, in_x_s = in_x, out_valid, out_y;
+<span class="k">endclocking</span>
+
+<span class="k">task</span> run();                                     <span class="c">// fir_monitor</span>
+  <span class="k">forever begin</span>
+    @(vif.cb);
+    <span class="k">if</span> (vif.rst_n !== 1'b1) <span class="k">continue</span>;
+    <span class="k">if</span> (vif.cb.out_valid)  sb.write_out(vif.cb.out_y);   <span class="c">// result of the input of edge k-1</span>
+    <span class="k">if</span> (vif.cb.in_valid_s) sb.write_in(vif.cb.in_x_s);   <span class="c">// input captured at edge k</span>
+  <span class="k">end</span>
+<span class="k">endtask</span></code></pre>
+<p>The scoreboard keeps a FIFO of predictions. <code>write_in</code> calls the model immediately and pushes the expected output; <code>write_out</code> pops the oldest prediction and compares. Because the model is untimed, the scoreboard never needs to know that the latency is one cycle; it only needs outputs to come out in input order, which is the spec.</p>
+<pre class="sv"><code><span class="k">function void</span> write_in(shortint x);
+  xs.push_back(x);
+  <span class="k">if</span> (!batch) exp_q.push_back(fir8_step(h, x));    <span class="c">// DPI call: one per accepted input</span>
+<span class="k">endfunction</span>
+<span class="k">function void</span> write_out(shortint y);
+  ys.push_back(y);
+  <span class="k">if</span> (!batch) <span class="k">begin</span>
+    <span class="k">if</span> (exp_q.size() == 0) <span class="k">begin</span> error(ys.size() - 1, 0, y, "output with no input"); <span class="k">return</span>; <span class="k">end</span>
+    compare(ys.size() - 1, exp_q.pop_front(), y);
+  <span class="k">end</span>
+<span class="k">endfunction</span></code></pre>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 250" role="img" aria-label="Timing: at edge k the monitor samples in_valid and in_x and calls write_in, which calls fir8_step and pushes y_exp; at edge k+1 it samples out_valid and out_y and calls write_out, which pops and compares">
+<text class="ttl" x="14" y="20">WHAT THE MONITOR SAMPLES (#1step BEFORE EACH EDGE; DOTS = SAMPLED HIGH)</text>
+<text class="t" x="14" y="56">clk</text>
+<path class="wv" d="M110,64 H150 V40 H200 V64 H250 V40 H300 V64 H350 V40 H400 V64 H450 V40 H500 V64 H550 V40 H600 V64 H650 V40 H690"/>
+<text class="t" x="14" y="96">in_valid</text>
+<path class="wv" d="M110,104 H160 V84 H360 V104 H460 V84 H560 V104 H690"/>
+<text class="t" x="14" y="136">in_x</text>
+<rect class="bus" x="160" y="122" width="100" height="20"/><text class="t mid" x="210" y="136">x0</text>
+<rect class="bus" x="260" y="122" width="100" height="20"/><text class="t mid" x="310" y="136">x1</text>
+<rect class="bus new" x="460" y="122" width="100" height="20"/><text class="t mid" x="510" y="136">x2</text>
+<text class="t" x="14" y="176">out_valid</text>
+<path class="wv" d="M110,184 H250 V164 H450 V184 H550 V164 H650 V184 H690"/>
+<text class="t" x="14" y="216">out_y</text>
+<rect class="bus" x="250" y="202" width="100" height="20"/><text class="t mid" x="300" y="216">y0</text>
+<rect class="bus" x="350" y="202" width="100" height="20"/><text class="t mid" x="400" y="216">y1</text>
+<rect class="bus new" x="550" y="202" width="100" height="20"/><text class="t mid" x="600" y="216">y2</text>
+<path class="guide" d="M250,30 V232"/><path class="guide" d="M350,30 V232"/><path class="guide" d="M450,30 V232"/><path class="guide" d="M550,30 V232"/><path class="guide" d="M650,30 V232"/>
+<text class="t mid" x="250" y="246">k: x0</text><text class="t mid" x="350" y="246">k+1: x1, y0</text><text class="t mid" x="450" y="246">k+2: y1</text><text class="t mid" x="550" y="246">k+3: x2</text><text class="t mid" x="650" y="246">k+4: y2</text>
+<circle class="dot hot" cx="250" cy="94" r="4"/><circle class="dot hot" cx="350" cy="94" r="4"/><circle class="dot hot" cx="550" cy="94" r="4"/><circle class="dot hot" cx="350" cy="174" r="4"/><circle class="dot hot" cx="450" cy="174" r="4"/><circle class="dot hot" cx="650" cy="174" r="4"/>
+</svg>
+<figcaption><b>Fig. 4</b>Pairing through a FIFO, not through timing. At each edge the monitor reports what it sampled: <code>write_in(x)</code> calls <code>fir8_step</code> and pushes the prediction; <code>write_out(y)</code> pops the oldest prediction. A bubble on <code>in_valid</code> (between x1 and x2) shifts both streams equally, so the pairing holds with any gap pattern.</figcaption>
+</figure>
+<p>The CRC needs a different scoreboard because its output is a <em>state</em>, valid on every cycle, not a stream of results. Its monitor calls one method per edge, <code>edge_seen(cyc, clear, valid, byte, crc)</code>. In stream mode the scoreboard first checks the sampled <code>crc</code> against its current prediction (the CRC of everything accepted so far) and then applies the edge's action to the model: <code>crc32_clear</code> on <code>clear</code> (which wins over <code>valid</code>, as in the RTL), otherwise <code>crc32_update</code>. The model replays the DUT's control decisions, which is exactly why those decisions have to be in the spec.</p>
+<div class="callout trap"><p>Pass the monitor's <em>sampled</em> values to the model, never the driver's intent. If the driver's transaction says <code>valid=1</code> but a protocol bug keeps <code>in_valid</code> low, a model fed from the driver predicts an output that never existed and the scoreboard blames the wrong side. In the lab the driver and the scoreboard never talk.</p></div>
+
+<!-- 0.6 -->
+<h3 id="t-where"><span class="no">0.6</span>Where to compare: per transaction or per block</h3>
+<p>Both scoreboards take <code>+MODE=stream</code> (default) or <code>+MODE=batch</code>. In stream mode the model is called as the monitor reports, and each output is checked when it appears. In batch mode the scoreboard only records. For the FIR it calls <code>fir8_block</code> once per 256 samples at the end of the test. For the CRC it calls <code>crc32_msg</code> once per frame, when <code>clear</code> closes the frame, and compares the final CRC only.</p>
+<div class="tbl"><table>
+<tr><th>Run (lab)</th><th>Mode</th><th class="num">Compared</th><th class="num">Errors</th><th class="num">First</th><th>Result</th></tr>
+<tr><td class="mono">fir_s1</td><td>stream</td><td class="num">500</td><td class="num">0</td><td class="num">—</td><td>PASS</td></tr>
+<tr><td class="mono">fir_b1</td><td>batch</td><td class="num">500</td><td class="num">0</td><td class="num">—</td><td>PASS, same digest <code>99b218a1</code></td></tr>
+<tr><td class="mono">fir_flip</td><td>stream, +FLIP=100</td><td class="num">2000</td><td class="num">1</td><td class="num">idx 100</td><td>FAIL (reported at the cycle it happened)</td></tr>
+<tr><td class="mono">fir_flip_b</td><td>batch, +FLIP=100</td><td class="num">2000</td><td class="num">1</td><td class="num">idx 100</td><td>FAIL (reported at end of test)</td></tr>
+<tr><td class="mono">crc_s1</td><td>stream (every cycle)</td><td class="num">1769</td><td class="num">0</td><td class="num">—</td><td>PASS</td></tr>
+<tr><td class="mono">crc_b1</td><td>batch (per frame)</td><td class="num">12</td><td class="num">0</td><td class="num">—</td><td>PASS</td></tr>
+<tr><td class="mono">crc_flip</td><td>stream, +FLIP=500</td><td class="num">1769</td><td class="num">1</td><td class="num">cycle 500</td><td>FAIL</td></tr>
+<tr><td class="mono">crc_flip_b</td><td>batch, +FLIP=500</td><td class="num">12</td><td class="num"><b>0</b></td><td class="num">—</td><td><b>PASS: blind</b></td></tr>
+</table></div>
+<p><code>+FLIP=k</code> is a fake DUT bug injected in the monitor. For the FIR it flips the LSB of output #k; for the CRC it flips bit 31 of the sampled <code>crc</code> on checked cycle #k, a one-cycle glitch that the next edge "repairs". For a stream-of-results DUT like the FIR, both modes find the bug and name the same index; the difference is <em>when</em> you hear about it (at simulated time of the failure, with waveforms around it, versus after the run). For a state-output DUT like the CRC, the per-frame check is strictly weaker: the glitch on cycle 500 lands mid-frame (frame 2, byte 151) and batch mode never looks at that cycle.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 190" role="img" aria-label="CRC check points: stream mode checks every cycle including the glitch at cycle 500; batch mode checks only at the end of each frame and misses it">
+<text class="ttl" x="14" y="22">ONE FRAME OF THE CRC RUN (crc_flip, frame 2)</text>
+<path class="e" d="M60,90 H690"/>
+<text class="t" x="14" y="94">cycles</text>
+<rect class="win" x="60" y="70" width="600" height="40" rx="4"/><text class="note mid" x="220" y="64">bytes accepted (gaps allowed)</text>
+<rect class="box hot" x="660" y="70" width="30" height="40" rx="3"/><text class="t mid" x="675" y="128">clear</text>
+<g class="dot">
+<circle cx="80" cy="150" r="3"/><circle cx="110" cy="150" r="3"/><circle cx="140" cy="150" r="3"/><circle cx="170" cy="150" r="3"/><circle cx="200" cy="150" r="3"/><circle cx="230" cy="150" r="3"/><circle cx="260" cy="150" r="3"/><circle cx="290" cy="150" r="3"/><circle cx="320" cy="150" r="3"/><circle cx="350" cy="150" r="3"/><circle cx="380" cy="150" r="3"/><circle cx="410" cy="150" r="3"/><circle cx="440" cy="150" r="3"/><circle cx="470" cy="150" r="3"/><circle cx="500" cy="150" r="3"/><circle cx="530" cy="150" r="3"/><circle cx="560" cy="150" r="3"/><circle cx="590" cy="150" r="3"/><circle cx="620" cy="150" r="3"/><circle cx="650" cy="150" r="3"/><circle cx="675" cy="150" r="3"/>
+</g>
+<text class="t" x="14" y="154">stream</text>
+<circle class="dot hot" cx="675" cy="176" r="5"/><text class="t" x="14" y="180">batch</text>
+<path class="e hot" d="M440,40 V130"/><text class="t hotx" x="446" y="46">glitch @ cycle 500</text>
+<circle cx="440" cy="150" r="7" fill="none" stroke="var(--d-acc)" stroke-width="2"/>
+<text class="note end" x="655" y="182">batch: one check per frame → misses it</text>
+</svg>
+<figcaption><b>Fig. 5</b>Check density. Stream mode compares the CRC on every one of 1769 edges; batch mode compares 12 times, once per frame, so a transient error between frame ends is invisible to it.</figcaption>
+</figure>
+<div class="callout hv"><p>Compare at monitor time unless you have a measured reason not to. You get the failure at the simulated time it happens (the waveform window you will open is right there), you catch transient and mid-transaction errors, and you can stop the run at the first mismatch. Batch comparison is for when the per-call cost dominates. That is not the case for a C model (<a href="#t-cost">0.9</a>), but it can be the case for Python or a remote model.</p></div>
+<p>Two smaller decisions also show up in the code. The error report prints the first five mismatches in full (<code>model</code>, <code>kind</code>, index or cycle, input, expected, got) and then only counts, because after the first error a stateful DUT usually diverges for the rest of the transaction. In the CRC mutant run below, one bad table entry produces 73 mismatches, all consequences of the first. The second decision: after every comparison the final report also checks that the number of outputs equals the number of inputs, because a DUT that drops or duplicates an output can otherwise pass every comparison it was given.</p>
+
+<!-- 0.7 -->
+<h3 id="t-stim"><span class="no">0.7</span>Stimulus, corners and seeds</h3>
+<p>A golden model makes random stimulus worth running: no one has to write the expected values. It does not make random stimulus <em>good</em>. Uniform 16-bit samples almost never hit the cases a fixed-point DUT gets wrong: full-scale inputs, the most negative code, long runs that drive the accumulator to its extremes. So the transaction class weights the corners explicitly:</p>
+<pre class="sv"><code><span class="k">class</span> fir_txn;
+  <span class="k">rand</span> bit      valid;
+  <span class="k">rand</span> shortint x;
+  <span class="k">constraint</span> c_valid { valid <span class="k">dist</span> {1 := 8, 0 := 2}; }                 <span class="c">// random bubbles</span>
+  <span class="k">constraint</span> c_x { x <span class="k">dist</span> {32767 := 5, -32768 := 5, 0 := 5,               <span class="c">// saturation corners</span>
+                           [-100:100] :/ 15, [-32767:32766] :/ 70}; }
+<span class="k">endclass</span></code></pre>
+<p>The coefficients are random too, with a 1-in-4 chance per tap of being exactly <code>32767</code> or <code>-32768</code>. The result is that 142 of the 500 outputs of seed 1 saturate (248 of 500 for seed 2). Without that, the saturation logic, which is half of the spec, would be checked by luck. The CRC frames get the same treatment: length 0 (an empty frame), 1–8, up to 256; bytes weighted toward <code>0x00</code> and <code>0xFF</code>; random gaps; and a <code>clear</code> that sometimes arrives together with a stray byte.</p>
+<div class="callout asic" style="--c-label:'In Verilator'"><p>Write negative <code>dist</code> values as plain decimals. In Verilator 5.052, <code>x dist {-16'sh8000 := 5}</code> on a <code>shortint</code> is unsatisfiable (<code>%Warning-UNSATCONSTR</code>, <code>randomize()</code> returns 0). The likely cause is that the negation is evaluated at a wider width, so the solver looks for $+32768$, which a <code>shortint</code> cannot hold. <code>-32768</code> works.</p></div>
+<p><b>Reproducibility</b> is one plusarg. The TB reads <code>+SEED=n</code> and calls <code>process::self().srandom(seed)</code> before creating any object, so every random value derives from it, including those of the class instances, which inherit the seed of the thread that constructs them (IEEE 1800-2023 §18.14). It prints a <code>digest</code> of the coefficients and every input sample. Seed 1 gives <code>99b218a1</code> in both stream and batch mode, and seed 2 gives <code>949caf20</code>. The equality across modes is not an accident. The scoreboard never draws a random number, so changing how you <em>check</em> cannot change what you <em>drive</em>. Keep it that way: a checker that consumes randomness makes a failing seed stop failing when you add a debug print.</p>
+<div class="callout trap"><p><b><code>randomize()</code> in Verilator calls an external SMT solver</b> (z3 here), once per call. In the lab, the 500-sample FIR run with <code>randomize()</code> takes 5.6 s of wall time with the CPU mostly idle, about 11 ms per accepted sample. The same TB with <code>+FAST</code> (the identical distribution built from <code>$urandom_range</code> in <code>fir_txn::fast_randomize</code>) runs 200,000 samples in 1.6 s, about 8 µs per sample. Parallel runs contend for the solver. Commercial simulators have in-process solvers and much lower per-call costs, but the lesson holds everywhere: measure before you blame the model.</p></div>
+
+<!-- 0.8 -->
+<h3 id="t-mutants"><span class="no">0.8</span>Proving the checker fires</h3>
+<p>A scoreboard that never fails is either checking a perfect DUT or checking nothing. You find out which by breaking something on purpose and watching it fail. The lab does this in two places:</p>
+<ul>
+<li><b>DUT side</b>: <code>+FLIP=k</code> corrupts one observed value in the monitor (previous section). It proves the comparison path, the error message and the index bookkeeping.</li>
+<li><b>Model side</b>: <code>golden.c</code> compiled with <code>-CFLAGS -DMUTANT=n</code> gets one realistic bug. These are the bugs a hurried model writer actually makes. Each failure pattern tells you something about your stimulus.</li>
+</ul>
+<div class="tbl"><table>
+<tr><th>Mutant</th><th>Bug</th><th class="num">Errors / compared</th><th class="num">First</th><th>What the pattern says</th></tr>
+<tr><td class="mono">1</td><td>FIR truncates (no <code>+2¹⁴</code>)</td><td class="num">5337 / 20000</td><td class="num">idx 5</td><td>49.5 % of the 10,779 non-saturated outputs: rounding differs exactly when the discarded 15 bits are ≥ ½ LSB, which for random data is half the time. Saturated outputs are unaffected.</td></tr>
+<tr><td class="mono">2</td><td>FIR wraps instead of saturating</td><td class="num">9221 / 20000</td><td class="num">idx 4</td><td>Exactly the 9221 saturated outputs, and no others. Without corner weighting, this count could be 0.</td></tr>
+<tr><td class="mono">4</td><td>FIR accumulates in 32 bits</td><td class="num">2611 / 20000</td><td class="num">idx 37</td><td>Only sums beyond $\pm 2^{31}$ differ; it needs several full-scale products in the delay line at once. Example: <code>exp=-32768 got=32767</code>, a sign flip.</td></tr>
+<tr><td class="mono">3</td><td>CRC table entry <code>0x5A</code> wrong</td><td class="num">73 / 1769 (stream)<br>2 / 12 (batch)</td><td class="num">cycle 67<br>cycle 111</td><td>One lookup in 256 is wrong; once hit, every later CRC of that frame differs (cycles 67, 68, 69…). Batch mode finds it later and only at the frame level.</td></tr>
+</table></div>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 200" role="img" aria-label="Bar chart of mismatch rates for the three FIR mutants over 20000 samples: truncation 26.7 percent, wrap 46.1 percent, 32-bit accumulator 13.1 percent">
+<text class="ttl" x="14" y="22">FIR MUTANTS: MISMATCHES PER 20,000 SAMPLES (SEED 3, +FAST)</text>
+<path class="grid" d="M200,40 V170"/><path class="grid" d="M340,40 V170"/><path class="grid" d="M480,40 V170"/><path class="grid" d="M620,40 V170"/>
+<text class="t mid" x="200" y="188">0 %</text><text class="t mid" x="340" y="188">25 %</text><text class="t mid" x="480" y="188">50 %</text><text class="t mid" x="620" y="188">75 %</text>
+<text class="t end" x="190" y="66">1 · truncate</text><rect class="bar" x="200" y="52" width="150" height="24"/><text class="t" x="357" y="69">5337 (26.7 %)</text>
+<text class="t end" x="190" y="106">2 · wrap</text><rect class="bar bad" x="200" y="92" width="258" height="24"/><text class="t" x="465" y="109">9221 (46.1 %) = all saturated</text>
+<text class="t end" x="190" y="146">4 · 32-bit acc</text><rect class="bar" x="200" y="132" width="73" height="24"/><text class="t" x="280" y="149">2611 (13.1 %)</text>
+</svg>
+<figcaption><b>Fig. 6</b>Each mutant is caught, but by a different slice of the stimulus. If mutant 2 or 4 survives a run, your stimulus does not reach saturation or full-scale accumulation, and the DUT's versions of those paths are unverified too.</figcaption>
+</figure>
+<div class="callout hv"><p>Mutation is a cheap coverage metric for the checker itself. Functional coverage tells you which inputs you drove; a surviving mutant tells you that a whole class of wrong answers would have passed. Keep two or three mutants in the regression as "must fail" tests: they catch a scoreboard that a refactor quietly disconnected.</p></div>
+
+<!-- 0.9 -->
+<h3 id="t-cost"><span class="no">0.9</span>What a DPI call costs</h3>
+<p><code>lab/bench.sv</code> times $10^7$ calls of each kind with a wall-clock DPI helper (<code>wall_s()</code>, <code>clock_gettime</code>) and prints nanoseconds per item. Numbers from the run used for this page; on a busy machine they move by up to 2×, so <code>check.py</code> asserts orders of magnitude and orderings, not exact values.</p>
+<div class="tbl"><table>
+<tr><th>Item</th><th>What is timed</th><th class="num">ns / item</th></tr>
+<tr><td class="mono">sv_nop</td><td>empty SV function call (baseline)</td><td class="num">0.5</td></tr>
+<tr><td class="mono">dpi_nop</td><td>empty DPI call into C, <code>int → int</code></td><td class="num">2.3</td></tr>
+<tr><td class="mono">crc32_update</td><td>one byte, chandle state</td><td class="num">3.6</td></tr>
+<tr><td class="mono">crc32_msg256</td><td>per byte, 256-byte buffer per call</td><td class="num">2.0</td></tr>
+<tr><td class="mono">sv_crc_byte</td><td>the bitwise CRC in plain SV</td><td class="num">7.0</td></tr>
+<tr><td class="mono">fir8_step</td><td>one sample</td><td class="num">6.1</td></tr>
+<tr><td class="mono">fir8_block256</td><td>per sample, 256 per call</td><td class="num">5.6</td></tr>
+<tr><td class="mono">sv_fir_step</td><td>the same FIR as an SV class</td><td class="num">19.8</td></tr>
+<tr><td class="mono">TB, +FAST</td><td>one FIR sample through driver, DUT, monitor, scoreboard</td><td class="num">≈ 8,000</td></tr>
+<tr><td class="mono">randomize()</td><td>one FIR sample with the solver</td><td class="num">≈ 11,000,000</td></tr>
+</table></div>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 280" role="img" aria-label="Log-scale bar chart of cost per item from 0.5 ns for an SV call to about 11 ms for randomize per sample">
+<text class="ttl" x="14" y="22">COST PER ITEM, LOG SCALE (VERILATOR 5.052, THIS MACHINE)</text>
+<path class="grid" d="M170,36 V246"/><path class="grid" d="M240,36 V246"/><path class="grid" d="M310,36 V246"/><path class="grid" d="M380,36 V246"/><path class="grid" d="M450,36 V246"/><path class="grid" d="M520,36 V246"/><path class="grid" d="M590,36 V246"/><path class="grid" d="M660,36 V246"/>
+<text class="t mid" x="170" y="262">0.1 ns</text><text class="t mid" x="240" y="262">1</text><text class="t mid" x="310" y="262">10</text><text class="t mid" x="380" y="262">100</text><text class="t mid" x="450" y="262">1 µs</text><text class="t mid" x="520" y="262">10 µs</text><text class="t mid" x="590" y="262">100 µs</text><text class="t mid" x="660" y="262">1 ms</text>
+<text class="t end" x="162" y="56">sv_nop</text><rect class="bar" x="170" y="44" width="49" height="16"/>
+<text class="t end" x="162" y="80">dpi_nop</text><rect class="bar" x="170" y="68" width="95" height="16"/>
+<text class="t end" x="162" y="104">crc32_update</text><rect class="bar" x="170" y="92" width="109" height="16"/>
+<text class="t end" x="162" y="128">fir8_step</text><rect class="bar" x="170" y="116" width="125" height="16"/>
+<text class="t end" x="162" y="152">sv_fir_step</text><rect class="bar" x="170" y="140" width="161" height="16"/>
+<text class="t end" x="162" y="176">TB per sample</text><rect class="bar" x="170" y="164" width="343" height="16"/>
+<text class="t end" x="162" y="200">randomize()</text><rect class="bar bad" x="170" y="188" width="540" height="16"/><text class="t end" x="706" y="226">≈ 11 ms (off the chart)</text>
+</svg>
+<figcaption><b>Fig. 7</b>Seven orders of magnitude between the cheapest and the most expensive thing in the run. The DPI call into the golden model sits in the nanoseconds. The simulated testbench (class methods, clocking blocks, the <code>--timing</code> scheduler) costs microseconds per sample. The constraint solver costs milliseconds.</figcaption>
+</figure>
+<p>What the numbers say, in order of importance:</p>
+<ol>
+<li><b>In Verilator a DPI import is an ordinary C function call.</b> The generated wrapper converts arguments (here, none of the types need conversion) and calls your function: about 2 ns of overhead. The 200,000-sample run calls <code>fir8_step</code> 200,000 times, about 1.2 ms of a 1.6 s run, under 0.1 %. <code>check.py</code> asserts that the DPI share is below 5 %.</li>
+<li><b>Batching buys nothing for a C model.</b> <code>fir8_block256</code> is within noise of <code>fir8_step</code>: the arithmetic dominates the call. The full FIR TB in batch mode was 1.31 s versus 1.64 s in stream mode for 200,000 samples, a difference made by SV queue handling and machine noise, not DPI. With C, choose stream or batch for debuggability (0.6), not speed.</li>
+<li><b>The model in C beats the model in SV.</b> The same FIR as an SV class costs about 3× more per sample in Verilator. This is not an argument against SV models, but it dispels the idea that crossing into C is expensive.</li>
+<li><b>This changes with Python.</b> A call into an embedded CPython interpreter costs on the order of a microsecond or more: the arguments become Python objects and the interpreter runs bytecode. Then 200,000 calls cost a noticeable fraction of the run, and the block API (one call, one array) becomes the tool. Step 08 measures exactly that, through these same imports, on both backends (its <code>tb_perf.sv</code>; <a href="../08_python_golden_model/guide.html">step 08</a>).</li>
+</ol>
+<div class="callout note" style="--c-label:'Commercial simulators'"><p>Not measured here. In event-driven simulators the import wrapper does more work: argument marshaling for 4-state and packed types, context and scope bookkeeping for <code>context</code> imports, and sometimes a call through a dynamically loaded <code>.so</code>. Expect tens of nanoseconds per call rather than single digits, still far below the per-cycle cost of a UVM testbench. Measure with the same <code>bench.sv</code> before you restructure a scoreboard for speed.</p></div>
+
+<!-- 0.10 -->
+<h3 id="t-swap"><span class="no">0.10</span>Swapping the implementation</h3>
+<p>The contract in 0.3 pays off here. <code>lab/ex/golden_cpp.cpp</code> implements the same nine symbols with two C++ classes, <code>Crc32</code> and <code>Fir8</code>. Each <code>chandle</code> is a <code>new</code>'d object; each import is a one-line wrapper that casts the handle and calls a method. This is Spear's §12.3 static-wrapper pattern (Samples 12.14 and 12.16), minus the hand-written <code>extern "C"</code> block: including <code>Vtop__Dpi.h</code> gives every definition C linkage, because a function first declared <code>extern "C"</code> keeps that linkage.</p>
+<pre class="sv"><code><span class="k">void</span>* fir8_new(<span class="k">const short</span>* coef) { <span class="k">return new</span> Fir8(coef); }
+<span class="k">void</span>  fir8_free(<span class="k">void</span>* h) { <span class="k">delete static_cast</span>&lt;Fir8*&gt;(h); }
+<span class="k">short</span> fir8_step(<span class="k">void</span>* h, <span class="k">short</span> x) { <span class="k">return static_cast</span>&lt;Fir8*&gt;(h)-&gt;step(x); }</code></pre>
+<p>The run script builds the FIR testbench twice from the same SV, once with <code>golden.c</code> and once with <code>ex/golden_cpp.cpp</code>, and runs both with <code>+SEED=3 +FAST +N=20000</code>. Both print digest <code>ca87667f</code> and <code>PASS fir8</code>. Nothing on the SV side knew which one it got.</p>
+<p>Step 08 replaces the object again, this time with a thin C layer that forwards each call into an embedded Python interpreter running <code>zlib.crc32</code> and a numpy FIR. Three things in this step's contract were chosen for that:</p>
+<ul>
+<li>The <b>handle</b> maps to a Python object (a model instance), so per-instance state works the same way.</li>
+<li>The <b>block entry points</b> (<code>crc32_msg</code>, <code>fir8_block</code>) give Python whole arrays. That is where it is fast: one call, one <code>bytes</code> or numpy buffer, the loop inside C-implemented library code.</li>
+<li>The <b>types are plain integers and arrays of them</b>, which convert directly to Python <code>int</code> and buffer objects. No 4-state values or packed structs cross the boundary.</li>
+</ul>
+
+<!-- 0.11 -->
+<h3 id="t-recipe"><span class="no">0.11</span>Recipe: a C golden model for your block</h3>
+<ol>
+<li><b>Pin down the spec</b> to the bit: rounding, saturation, signedness, reset state, control priorities, bit/byte order. Find an external check value (a standard's test vector, the algorithm team's output).</li>
+<li><b>Write the contract</b> as a package of imports: <code>new/free</code> plus a per-item call for stateful models, a block call for throughput, <code>pure</code> only for stateless functions, plain C types, fixed-size buffers plus length.</li>
+<li><b>Write the model</b> against the spec, with a different algorithm from the RTL where possible. Include the generated <code>__Dpi.h</code>. Abort on contract violations, never on mismatches.</li>
+<li><b>Feed it from the monitor</b>, never from the driver. Pair outputs with predictions through a FIFO (streams) or by replaying the control decisions every cycle (state outputs).</li>
+<li><b>Compare at monitor time</b>, bit-exactly, with a report that names the model, the index or cycle, the input, the expected and the observed value. Print the first few mismatches, count the rest, and check the transaction counts at the end.</li>
+<li><b>Weight the corners</b> in the stimulus, take the seed from a plusarg, and keep the checker free of random calls.</li>
+<li><b>Break it on purpose</b>: one DUT-side injection, two or three model mutants, all expected to fail, all in the regression.</li>
+<li><b>Measure before optimizing.</b> With a C model the DPI call is noise; the solver and the TB dominate.</li>
+</ol>
+
+<!-- ============================================================== §1 -->
+<h2 id="s1"><span class="no">§1 · Objectives</span>What you should be able to do</h2>
+<ul>
+<li>Explain what makes a reference model independent, bit-exact and untimed, and why a cycle-accurate "model" is a different tool.</li>
+<li>Design a DPI contract for a stateful model: <code>chandle</code> lifecycle, per-item and block entry points, <code>pure</code> only where true, portable argument types.</li>
+<li>Wire a model into a layered SV testbench so that predictions come from <em>sampled</em> inputs and are paired with outputs by order, independent of latency and gaps.</li>
+<li>Choose between per-transaction and end-of-test comparison, and know what each one can miss.</li>
+<li>Write stimulus that reaches the spec's corners, make it reproducible from one seed, and keep the checker from disturbing it.</li>
+<li>Prove that a checker fires with DUT-side injection and model mutants, and read what a surviving mutant says about the stimulus.</li>
+<li>Measure DPI call cost against the rest of the run, and predict when batching matters (Python, step 08) and when it does not (C).</li>
+<li>Swap the implementation behind the contract without touching the SV side.</li>
+</ul>
+<p>Prerequisites: import declarations and the generated header (<a href="../01_first_call/guide.html">01</a>), type mapping (<a href="../02_data_types/guide.html">02</a>), <code>chandle</code> state (<a href="../03_state_and_handles/guide.html">03</a>), open arrays (<a href="../04_arrays_structs_strings/guide.html">04</a>), <code>pure</code>/<code>context</code> (<a href="../05_export_and_context/guide.html">05</a>).</p>
+
+<!-- ============================================================== §2 -->
+<h2 id="s2"><span class="no">§2 · Exercises</span>12 graded exercises, with solutions</h2>
+<p>★ basic · ★★ intermediate · ★★★ real design. Every solution that contains code or a number was run in the <a href="#s4">lab</a> and is checked by <code>check.py</code>; code lives in <code>lab/ex/</code>. "Ex. 12.N" = exercise from Spear &amp; Tumbush ch. 12 (the book gives no solutions).</p>
+
+<div class="q" id="ex1">
+<p><span class="n">E1 ★</span><b>Predict.</b> The FIR TB is run with <code>+SEED=1 +FAST +N=2000 +FLIP=100</code>, once in stream mode and once with <code>+MODE=batch</code>. For each: how many errors, at which index, and at what point of the run is the mismatch printed?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>Both report <code>errors=1 first=100</code>, with the line <code>LOG mismatch model=fir8 kind=value idx=100 x=28789 exp=-26047 got=-26048</code> (the LSB flip turns −26047 into −26048). In stream mode the line is printed during the run, at the clock edge where output #100 is sampled. In batch mode it is printed after the driver finishes, inside <code>check_batch()</code>, so the log shows it <em>after</em> the <code>fir_run</code> line. Same detection, different debug experience: in stream mode you can stop the simulation and look at the waveform at that time.</p>
+</div></details>
+</div>
+
+<div class="q" id="ex2">
+<p><span class="n">E2 ★</span><b>Predict.</b> Mutant 1 makes the C model truncate instead of rounding (it drops the <code>+2¹⁴</code>). In a 20,000-sample run where 9221 outputs saturate, roughly how many mismatches do you expect, and why are saturated outputs safe?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>Rounding and truncation differ exactly when bit 14 of the accumulator (the first discarded bit) is 1, i.e. when the discarded fraction is ≥ ½ LSB. For random data that is half the time, so about ½ × (20000 − 9221) ≈ 5390. The lab measures <b>5337</b> (49.5 %). Saturated outputs are safe because their sum is so far beyond ±32767 that a ½-LSB difference does not change the clamped result. The first mismatch is at idx 5 (<code>exp=32532 got=32533</code>): the model is one LSB low, as truncation always is.</p>
+</div></details>
+</div>
+
+<div class="q" id="ex3">
+<p><span class="n">E3 ★★</span><b>Ex. 12.1 + 12.2, as golden models.</b> Write <code>shift_c(i, n)</code>: shift a 32-bit unsigned value left by <code>n</code> if positive, right by <code>-n</code> if negative, unchanged if 0. Then <code>shift_reg(i, n, ld)</code> with an internal register: if <code>ld</code>, load <code>i</code> shifted by <code>n</code>, otherwise shift the register. Check both against SV's own shift operators for <code>n</code> ∈ {0, 1, 4, 31, 32, 40, −1, −4, −31, −32, −40}.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">/* ex/shift.c (excerpt). C makes x &lt;&lt; 32 undefined behavior; SV defines it as 0. */</span>
+<span class="k">static</span> uint32_t sh(uint32_t i, <span class="k">int</span> n) {
+  <span class="k">if</span> (n &gt;= 32 || n &lt;= -32) <span class="k">return</span> 0;
+  <span class="k">return</span> n &gt; 0 ? i &lt;&lt; n : n &lt; 0 ? i &gt;&gt; -n : i;
+}
+<span class="k">unsigned int</span> shift_c(<span class="k">unsigned int</span> i, <span class="k">int</span> n) { <span class="k">return</span> sh(i, n); }
+<span class="k">static</span> uint32_t reg;                                  <span class="c">/* one register for every caller */</span>
+<span class="k">unsigned int</span> shift_reg(<span class="k">unsigned int</span> i, <span class="k">int</span> n, <span class="k">unsigned char</span> ld) {
+  reg = ld ? sh(i, n) : sh(reg, n);
+  <span class="k">return</span> reg;
+}</code></pre>
+<pre class="sv"><code><span class="k">import</span> "DPI-C" <span class="k">pure function</span> int unsigned shift_c(<span class="k">input</span> int unsigned i, <span class="k">input</span> int n);
+<span class="k">import</span> "DPI-C" <span class="k">function</span> int unsigned shift_reg(<span class="k">input</span> int unsigned i, <span class="k">input</span> int n, <span class="k">input</span> bit ld);</code></pre>
+<p>The interesting part is the guard. The spec ("shift by n") is clear in SV, where shifting by 32 or more gives 0, but in C <code>x &lt;&lt; 32</code> is undefined behavior. In practice, x86 shift instructions mask the count to 5 bits, so a variable shift by 32 typically returns <code>x</code> unchanged. Without the guard, the model and the RTL disagree at <code>n = 32</code> and <code>40</code>, and the model is the one that is wrong. <code>shift_c</code> is <code>pure</code>; <code>shift_reg</code> is not, because it has state. The lab checks all 11 shift amounts plus the register sequence (load <code>0x0F</code>&lt;&lt;4 = <code>0xF0</code>, then shift right 2 = <code>0x3C</code>): <code>LOG ex12_2 reg=0000003c</code>, <code>PASS shift</code>.</p>
+</div></details>
+</div>
+
+<div class="q" id="ex4">
+<p><span class="n">E4 ★★</span><b>Ex. 12.3–12.5.</b> Make the shift register per-instance: <code>shift_new(init)</code> returns a handle with the register initialized to <code>init</code>, and <code>shift_inst(h, i, n, ld)</code> prints the instance address and a global count of calls over all instances. Create two instances and call each twice.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="k">static unsigned long</span> calls;                           <span class="c">/* Ex. 12.4: across instances */</span>
+<span class="k">void</span>* shift_new(<span class="k">unsigned int</span> init) {                  <span class="c">/* Ex. 12.5: initial value */</span>
+  uint32_t* r = malloc(<span class="k">sizeof</span> *r);  *r = init;  <span class="k">return</span> r;
+}
+<span class="k">unsigned int</span> shift_inst(<span class="k">void</span>* h, <span class="k">unsigned int</span> i, <span class="k">int</span> n, <span class="k">unsigned char</span> ld) {
+  uint32_t* r = h;
+  *r = ld ? sh(i, n) : sh(*r, n);
+  printf("LOG shift_inst inst=%p ... reg=%08x calls=%lu\n", h, *r, ++calls);
+  <span class="k">return</span> *r;
+}</code></pre>
+<p>Lab output (addresses vary per run):</p>
+<pre class="sv"><code>LOG shift_inst inst=0x600003508030 i=00000000 n=1 ld=0 reg=00000002 calls=1
+LOG shift_inst inst=0x600003508040 i=00000000 n=-4 ld=0 reg=00000010 calls=2
+LOG shift_inst inst=0x600003508030 i=00000000 n=1 ld=0 reg=00000004 calls=3
+LOG shift_inst inst=0x600003508040 i=00000000 n=-4 ld=0 reg=00000001 calls=4</code></pre>
+<p>Instance A starts at 1 and shifts left (2, 4); B starts at <code>0x100</code> and shifts right by 4 (<code>0x10</code>, <code>0x1</code>). Two addresses, one counter. This is exactly what the FIR scoreboard does with <code>fir8_new</code>: one model per scoreboard, so a TB with two FIR instances needs two scoreboards and two handles. A <code>static</code> model would interleave both channels' samples into one delay line. The address doubles as an instance ID in logs, as Ex. 12.3 suggests, but it is not stable across runs, so never use it in a golden log you diff.</p>
+</div></details>
+</div>
+
+<div class="q" id="ex5">
+<p><span class="n">E5 ★★</span><b>Find the bug.</b> A colleague "simplifies" the FIR TB by letting the driver feed the scoreboard directly:</p>
+<pre class="sv"><code><span class="k">task</span> run(int n);
+  fir_txn t = <span class="k">new</span>();
+  <span class="k">for</span> (int sent = 0; sent &lt; n; ) <span class="k">begin</span>
+    void'(t.randomize());
+    @(vif.cb);
+    vif.cb.in_valid &lt;= t.valid;
+    vif.cb.in_x     &lt;= t.x;
+    sb.write_in(t.x);                    <span class="c">// "the monitor is redundant for inputs"</span>
+    sent += t.valid;
+  <span class="k">end</span>
+<span class="k">endtask</span></code></pre>
+<p>The DUT is correct. What does the scoreboard report, and when?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>The driver calls <code>write_in</code> for <em>every</em> transaction, including bubbles (<code>valid=0</code>), which the DUT ignores. Each bubble pushes an extra prediction <em>and</em> advances the model's delay line with a sample the DUT never saw. From the first bubble on, predictions are misaligned and the model's state is wrong, so almost every comparison fails. The first mismatch is reported at the first output after the first bubble, and the final count check fails too (more inputs than outputs). The fix is the rule from 0.5: the model is fed from what the monitor <em>sampled</em> (<code>in_valid_s</code>/<code>in_x_s</code> at the edge), which is by definition what the DUT captured. A related subtle variant: feeding from the driver with a <code>if (t.valid)</code> guard works here, but breaks the day a protocol bug (or a backpressure signal) makes the DUT not capture a sample the driver offered.</p>
+</div></details>
+</div>
+
+<div class="q" id="ex6">
+<p><span class="n">E6 ★★</span><b>Find the bug.</b> To "help the optimizer", someone declares the per-sample FIR call as <code>import "DPI-C" pure function shortint fir8_step(input chandle h, input shortint x);</code>. Which IEEE 1800 rule does this break, and what can a simulator legally do as a result?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>IEEE 1800-2023 §35.5.2: a <code>pure</code> function's result depends only on its inputs and it has no side effects. <code>fir8_step</code> has both a hidden input (the delay line behind <code>h</code>) and a side effect (it shifts the delay line). Given <code>pure</code>, a simulator may skip a call whose result is unused, evaluate two calls with equal arguments once, or reorder calls. Any of these desynchronizes the model's delay line from the DUT's, and the run fails in a way that depends on the compiler's optimization choices: the worst kind of failure. The same rule says <code>crc32_msg</code> <em>may</em> be <code>pure</code> (no state, result depends only on <code>msg</code> and <code>len</code>). Note that a <code>chandle</code> argument is not what disqualifies a function; the state behind it is. Step 05 covers <code>pure</code>/<code>context</code> in detail.</p>
+</div></details>
+</div>
+
+<div class="q" id="ex7">
+<p><span class="n">E7 ★★</span><b>Predict, then fix.</b> The CRC TB runs with <code>+FLIP=500</code> (bit 31 of the sampled <code>crc</code> flipped on checked cycle 500, mid-frame) in batch mode. Pass or fail? If batch mode has to stay (say the model is remote and expensive), what cheap check would catch a one-cycle glitch?</p>
+<details><summary>Show solution</summary><div class="a">
+<p><b>Pass.</b> The lab's <code>crc_flip_b</code> reports <code>compared=12 errors=0</code>: the per-frame check only looks at the cycle where <code>clear</code> closes each frame, and cycle 500 is byte 151 of frame 2. Stream mode (<code>crc_flip</code>) reports <code>errors=1 first=500</code>. Cheap fixes that do not need the model on every cycle:</p>
+<ul>
+<li>A <b>stability property</b> (a sketch, not in the lab): <code>crc</code> may change only on an edge where <code>in_valid</code> or <code>clear</code> was sampled high (<code>assert property (@(posedge clk) !$past(in_valid || clear) |-&gt; $stable(crc))</code>), which catches any glitch without a model.</li>
+<li>Check <b>more points per frame</b> with the block model: call <code>crc32_msg</code> on a prefix at a few random cycles per frame. It is still cheap and catches persistent errors earlier, though not a single-cycle glitch, unless you happen to sample that cycle.</li>
+</ul>
+<p>The general lesson: a per-transaction check of a state output only covers the states at transaction boundaries.</p>
+</div></details>
+</div>
+
+<div class="q" id="ex8">
+<p><span class="n">E8 ★★★</span><b>A model-free check.</b> CRC-32 has a residue property: append the CRC of a message to it, little-endian, and the CRC of the extended message is the constant <code>0x2144DF1C</code>, whatever the message. Using only <code>crc32_msg</code>, write a test that checks this for 1000 random messages of 0–60 bytes. Why is such a check valuable next to a golden model?</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">// ex/residue_tb.sv</span>
+<span class="k">module</span> top;
+  <span class="k">import</span> golden_pkg::*;
+  <span class="k">initial begin</span>
+    byte unsigned b[64];
+    int bad = 0;
+    <span class="k">for</span> (int t = 0; t &lt; 1000; t++) <span class="k">begin</span>
+      int len = $urandom_range(60);
+      int unsigned c;
+      <span class="k">for</span> (int i = 0; i &lt; len; i++) b[i] = $urandom;
+      c = crc32_msg(b, len);
+      <span class="k">for</span> (int k = 0; k &lt; 4; k++) b[len + k] = c[8*k +: 8];      <span class="c">// little-endian</span>
+      <span class="k">if</span> (crc32_msg(b, len + 4) != 32'h2144DF1C) bad++;
+    <span class="k">end</span>
+    $display("LOG residue trials=1000 bad=%0d", bad);
+    $finish;
+  <span class="k">end</span>
+<span class="k">endmodule</span></code></pre>
+<p>Lab: <code>LOG residue trials=1000 bad=0</code>. The value of the property is that it is <b>independent of any implementation</b>. It checks the model (here) or the DUT (feed the DUT a frame plus its own CRC and look at <code>crc</code>) with no reference at all. It also cannot be fooled by a "consistent" bug shared by the RTL and a model written from the same misunderstanding, for example a wrong final XOR or reflected-vs-normal bit order. This is the same idea as the check value <code>0xCBF43926</code> (0.1), taken further: anchor your model to facts that do not come from your own code. The constant can be confirmed outside the simulator: <code>zlib.crc32(m + zlib.crc32(m).to_bytes(4, 'little'))</code> gives <code>0x2144df1c</code> for any <code>m</code>.</p>
+</div></details>
+</div>
+
+<div class="q" id="ex9">
+<p><span class="n">E9 ★★★</span><b>Swap the implementation.</b> Implement the full <code>golden_pkg</code> contract with C++ classes (Spear §12.3), build the FIR testbench against it instead of <code>golden.c</code>, and show that the two runs are indistinguishable.</p>
+<details><summary>Show solution</summary><div class="a">
+<p><code>lab/ex/golden_cpp.cpp</code> (about 60 lines): class <code>Crc32</code> with a <code>static inline const std::array</code> table and a <code>push(byte)</code> method; class <code>Fir8</code> with <code>step(x)</code>; then one-line wrappers per import:</p>
+<pre class="sv"><code><span class="k">#include</span> "Vtop__Dpi.h"   <span class="c">// declares the imports extern "C"; the definitions below inherit it</span>
+<span class="k">void</span>* crc32_new() { <span class="k">return new</span> Crc32; }
+<span class="k">void</span>  crc32_free(<span class="k">void</span>* h) { <span class="k">delete static_cast</span>&lt;Crc32*&gt;(h); }
+<span class="k">unsigned int</span> crc32_update(<span class="k">void</span>* h, <span class="k">unsigned char</span> b) { <span class="k">return static_cast</span>&lt;Crc32*&gt;(h)-&gt;push(b); }
+<span class="k">void</span>* fir8_new(<span class="k">const short</span>* coef) { <span class="k">return new</span> Fir8(coef); }
+<span class="k">short</span> fir8_step(<span class="k">void</span>* h, <span class="k">short</span> x) { <span class="k">return static_cast</span>&lt;Fir8*&gt;(h)-&gt;step(x); }
+<span class="c">// ... crc32_clear, crc32_msg, fir8_free, fir8_block likewise</span></code></pre>
+<p>Build line: <code>vlb fir_cpp golden_pkg.sv fir8.sv fir_tb.sv wall.c ex/golden_cpp.cpp</code>. Running <code>+SEED=3 +FAST +N=20000</code> against both objects prints the same <code>digest=ca87667f</code>, <code>compared=20000 errors=0</code> and <code>PASS fir8</code>. Note what the C++ version needs that the book's Sample 12.14 spells out by hand: C linkage. Here it comes for free from including the generated header, because a function first declared <code>extern "C"</code> keeps C linkage at its definition. Without the include (and without an explicit <code>extern "C"</code>), the definitions get C++-mangled names and the link fails; the lab's <code>nohdr</code> build (the same file with the include line removed) stops with <code>Undefined symbols for architecture x86_64</code>.</p>
+</div></details>
+</div>
+
+<div class="q" id="ex10">
+<p><span class="n">E10 ★★</span><b>Estimate.</b> A nightly regression drives 10 million FIR samples through this TB. Using the lab's numbers (≈ 11 ms per sample with <code>randomize()</code> under contention, ≈ 8 µs per sample with <code>$urandom</code>, ≈ 6 ns per <code>fir8_step</code>), how long does it take each way, and how much of it is the golden model?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>With <code>randomize()</code>: $10^7 \times 11\,\text{ms} \approx 1.1 \times 10^5\,\text{s} \approx 30$ hours. With <code>$urandom</code>: $10^7 \times 8\,\mu\text{s} = 80\,\text{s}$. Golden model: $10^7 \times 6\,\text{ns} = 0.06\,\text{s}$ in either case, which is 0.07 % of the fast run and nothing in the slow one. Moving the model to batch mode would save nothing. The fixes that matter are on the stimulus side: randomize a whole block per call (a <code>rand shortint x[64]</code> with <code>foreach</code> constraints amortizes the solver call), or generate the per-sample distribution with <code>$urandom</code> and keep <code>randomize()</code> for the rare, structured decisions (frame lengths, configurations). On a commercial simulator with an in-process solver the gap is smaller, but the method is the same: measure each layer before you optimize one.</p>
+</div></details>
+</div>
+
+<div class="q" id="ex11">
+<p><span class="n">E11 ★</span><b>Find the bug (build line).</b> To compare implementations in one run, someone builds <code>verilator --binary ... golden_pkg.sv fir8.sv fir_tb.sv wall.c golden.c ex/golden_cpp.cpp</code>. What happens?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>The link fails, because both objects define the same nine C symbols. The lab's <code>dup</code> build shows it:</p>
+<pre class="sv"><code>duplicate symbol '_crc32_clear' in:
+    .../build/vl_dup/golden_cpp.o
+    .../build/vl_dup/golden.o
+duplicate symbol '_fir8_step' in:
+...</code></pre>
+<p>The leading underscore is the macOS symbol convention. A DPI import names a global C symbol, and there is exactly one per program. To run two models side by side, give the second implementation different C names and bind them to different SV names with the <code>c_identifier =</code> form of <a href="../01_first_call/guide.html">step 01</a> (<code>import "DPI-C" ref_fir8_step = function shortint ref_step(...)</code>), or put each in its own shared library loaded explicitly. That is also why step 08 replaces <code>golden.c</code> on the link line rather than adding to it.</p>
+</div></details>
+</div>
+
+<div class="q" id="ex12">
+<p><span class="n">E12 ★</span><b>Predict.</b> <code>byte unsigned b[256];</code> and then <code>$display("%h", crc32_msg(b, 300));</code>. What does the simulation print, and how does it end?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>The model checks its contract: <code>len</code> outside <code>[0, svSize(msg, 1)]</code>. It prints <code>crc32_msg: len=300 outside buffer of 256</code> on stderr and calls <code>abort()</code>. The <code>$display</code> never completes, and the process dies with SIGABRT (exit code 134; the lab records <code>RUN_RC=134</code>). Without the guard, the C loop would read 44 bytes past the end of the SV array. That is undefined behavior: usually a plausible-looking wrong CRC, which the scoreboard would report as a <em>DUT</em> bug. A loud abort with the reason is the right response to a testbench bug; reserve mismatch reports for DUT-versus-model disagreements.</p>
+</div></details>
+</div>
+
+<!-- ============================================================== §3 -->
+<h2 id="s3"><span class="no">§3 · Quiz</span>Check your reasoning</h2>
+<p>Pick an answer, press <b>Check</b>. Each explanation covers the right answer and the tempting wrong one.</p>
+<p class="quiz-score"></p>
+
+<div class="quiz" data-answer="c">
+<p class="qq">1. The RTL CRC does eight bitwise shift/XOR steps per byte. Which reference model gives the most independent check?</p>
+<label><input type="radio" value="a"> The same eight-step loop in C, because it matches the RTL exactly.</label>
+<label><input type="radio" value="b"> A behavioral SV function with the same loop, to avoid DPI.</label>
+<label><input type="radio" value="c"> A table-driven C implementation, anchored to the catalogue check value 0xCBF43926.</label>
+<label><input type="radio" value="d"> Whatever the DUT outputs in the first passing regression, stored as expected values.</label>
+<div class="why">(c) uses a different algorithm and an external anchor, so a shared misunderstanding (bit order, init, final XOR) shows up as a disagreement or as a wrong check value. (a) and (b) transliterate the RTL and tend to share its bugs; (d) records today's behavior, bugs included.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">2. <code>fir8_step(h, x)</code> updates a delay line behind <code>h</code>. Which import qualifier is correct?</p>
+<label><input type="radio" value="a"> <code>pure</code>: its output only depends on <code>h</code> and <code>x</code>.</label>
+<label><input type="radio" value="b"> none (a plain import).</label>
+<label><input type="radio" value="c"> <code>context</code>: it has state.</label>
+<div class="why">It has hidden state and a side effect, so it is not <code>pure</code>. A simulator may legally drop or merge "redundant" pure calls, desynchronizing the model. <code>context</code> is about calling exported SV routines or accessing SV scope from C, not about C-side state; this function needs neither.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">3. In Verilator 5.052, what happens if the TB passes a <em>dynamic</em> array to <code>input byte unsigned msg[]</code>?</p>
+<label><input type="radio" value="a"> Elaboration error: "Unsupported: DPI argument of type DYNARRAYDTYPE".</label>
+<label><input type="radio" value="b"> It works; <code>svSize</code> returns the current size.</label>
+<label><input type="radio" value="c"> It compiles but C receives a NULL handle.</label>
+<div class="why">Measured: Verilator rejects it at the import, followed by an internal error. A fixed-size array actual works. Commercial simulators accept dynamic arrays here, which is exactly why the contract carries an explicit length and uses fixed buffers: it works everywhere.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">4. The FIR monitor samples through a clocking block. At edge $k$ it sees <code>out_valid=1</code>. The output belongs to the input captured at…</p>
+<label><input type="radio" value="a"> edge $k$, because outputs are combinational.</label>
+<label><input type="radio" value="b"> edge $k+1$.</label>
+<label><input type="radio" value="c"> edge $k-1$, but the scoreboard does not need to know: it pairs by order.</label>
+<div class="why"><code>out_y</code> is registered (latency 1), and <code>#1step</code> sampling sees the value from before edge $k$, i.e. what was registered at $k-1$. The scoreboard's FIFO pairs outputs with predictions in order, so the latency never appears in the checker; that is what keeps the model untimed.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+<p class="qq">5. Why does the scoreboard call the model from <code>write_in</code> (monitor) instead of from the driver?</p>
+<label><input type="radio" value="a"> It is faster.</label>
+<label><input type="radio" value="b"> The driver runs in a different scheduler region where DPI is not allowed.</label>
+<label><input type="radio" value="c"> UVM requires it.</label>
+<label><input type="radio" value="d"> The model must see what the DUT actually captured; the driver only knows what it offered.</label>
+<div class="why">Bubbles, backpressure and protocol bugs make "offered" and "captured" differ. A model fed from the driver predicts outputs that never existed (exercise 5). DPI calls are allowed from any procedural context.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">6. The CRC TB injects a one-cycle glitch mid-frame (<code>+FLIP=500</code>). Stream mode reports 1 error. Batch mode (one <code>crc32_msg</code> per frame) reports…</p>
+<label><input type="radio" value="a"> 1 error, but at the end of the frame.</label>
+<label><input type="radio" value="b"> 0 errors.</label>
+<label><input type="radio" value="c"> 1 error per remaining frame.</label>
+<div class="why">Measured: <code>compared=12 errors=0</code>. The per-frame check only samples the CRC at the frame boundary; the glitch is repaired by the next edge. For a state output, per-transaction checking only covers the states at transaction boundaries.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">7. Seed 1 gives digest <code>99b218a1</code> in stream mode. In batch mode with the same seed the digest is…</p>
+<label><input type="radio" value="a"> the same, because the scoreboard draws no random numbers.</label>
+<label><input type="radio" value="b"> different, because the scoreboard runs different code.</label>
+<label><input type="radio" value="c"> undefined: Verilator does not guarantee random stability.</label>
+<div class="why">Random stability (IEEE 1800-2023 §18.14) makes each thread's and object's sequence depend on its seed and on the order of calls in <em>that</em> thread/object. The checker consumes none, so changing it cannot perturb stimulus. A checker that called <code>$urandom</code> in the stream path only would break this.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">8. Mutant 2 (wrap instead of saturate) produced exactly 9221 mismatches in a run with 9221 saturated outputs. If a run of that mutant produced 0 mismatches, the most likely conclusion is…</p>
+<label><input type="radio" value="a"> The mutant was not compiled in.</label>
+<label><input type="radio" value="b"> The DUT also wraps.</label>
+<label><input type="radio" value="c"> The stimulus never drove the filter into saturation, so the DUT's saturation path is unverified too.</label>
+<label><input type="radio" value="d"> Batch mode was used.</label>
+<div class="why">Wrap and saturate only differ when the result is out of range. Zero kills means the run never got there. (a) and (b) are possible but you check them second; (d) is irrelevant for a stream-of-results DUT (both modes compare every output).</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">9. Measured in Verilator: an empty DPI call costs about…</p>
+<label><input type="radio" value="a"> 0.1 ns, it is inlined.</label>
+<label><input type="radio" value="b"> 2 ns, about the cost of an ordinary C function call plus a small wrapper.</label>
+<label><input type="radio" value="c"> 1 µs, it crosses into another process.</label>
+<label><input type="radio" value="d"> 100 µs, it goes through the PLI.</label>
+<div class="why"><code>dpi_nop</code>: 1.6–2.3 ns per call across runs, versus 0.5 ns for an empty SV function. Verilator compiles the SV to C++ and the import becomes a direct call. Nothing crosses a process boundary; that only happens with sockets or remote models.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+<p class="qq">10. The FIR TB with a C model is slow. Which change gives the biggest speedup?</p>
+<label><input type="radio" value="a"> Switch the scoreboard to <code>fir8_block</code> (batch mode).</label>
+<label><input type="radio" value="b"> Mark <code>fir8_step</code> as <code>pure</code>.</label>
+<label><input type="radio" value="c"> Rewrite the model in SV to avoid DPI.</label>
+<label><input type="radio" value="d"> Stop calling <code>randomize()</code> once per sample.</label>
+<div class="why">Per sample: about 6 ns for the model, about 8 µs for the TB, about 11 ms for <code>randomize()</code> in Verilator (external solver). (a) saves nanoseconds; (b) is a correctness bug; (c) is slower (the SV FIR costs about 3× the C one).</div>
+</div>
+
+<div class="quiz" data-answer="a,c">
+<p class="qq">11. Which properties of the contract were chosen so that step 08 can replace the C with Python? (select all)</p>
+<label><input type="checkbox" value="a"> State behind a <code>chandle</code>, which can point to a Python object.</label>
+<label><input type="checkbox" value="b"> All functions are <code>context</code>.</label>
+<label><input type="checkbox" value="c"> Block entry points that pass whole arrays in one call.</label>
+<label><input type="checkbox" value="d"> 4-state <code>logic</code> arguments, for X propagation into Python.</label>
+<div class="why">Handles map to model instances; block calls amortize the much larger per-call cost of the interpreter. None of the imports needs <code>context</code>, and the arguments are deliberately 2-state plain integers. 4-state values would need <code>svLogicVecVal</code> handling on both sides, and Verilator is 2-state anyway.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">12. <code>golden.c</code> and <code>ex/golden_cpp.cpp</code> are both put on the same Verilator command line. Result?</p>
+<label><input type="radio" value="a"> The first one on the line wins.</label>
+<label><input type="radio" value="b"> Link error: duplicate symbol for every import.</label>
+<label><input type="radio" value="c"> The C++ one wins because C++ symbols take priority.</label>
+<div class="why">An import names one global C symbol; two definitions are a link error (<code>duplicate symbol '_crc32_clear'</code>, measured). There is no priority rule. To compare two models in one run, give them different C names.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">13. The model detects <code>len &gt; svSize(msg, 1)</code>. What should it do?</p>
+<label><input type="radio" value="a"> Clamp <code>len</code> and return the CRC of the buffer.</label>
+<label><input type="radio" value="b"> Return 0 so the scoreboard reports a mismatch.</label>
+<label><input type="radio" value="c"> Print the reason and abort: it is a testbench bug, not a DUT result.</label>
+<div class="why">(a) hides a TB bug. (b) turns a TB bug into a "DUT mismatch" and sends the designer hunting. A contract violation should stop the run loudly (the lab shows <code>crc32_msg: len=300 outside buffer of 256</code>, exit 134).</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">14. A model hits a bad CRC table entry once in a frame. The stream scoreboard prints 5 mismatches and counts 73. How many distinct bugs is that, most likely?</p>
+<label><input type="radio" value="a"> 73.</label>
+<label><input type="radio" value="b"> One: after the first wrong state, every later CRC of the frame differs.</label>
+<label><input type="radio" value="c"> 5, one per printed line.</label>
+<div class="why">Stateful outputs propagate the first error until the state is reset (here, by <code>clear</code>). That is why the report leads with the <em>first</em> mismatch (<code>first=67</code>) and only counts the rest.</div>
+</div>
+
+<!-- ============================================================== §4 -->
+<h2 id="s4"><span class="no">§4 · Lab</span>Run it, read it, break it</h2>
+<p>Files in <code>06_golden_model_c/lab/</code>:</p>
+<div class="tbl"><table>
+<tr><th>File</th><th>What it is</th></tr>
+<tr><td class="mono">golden_pkg.sv</td><td>the contract: 9 imports (reused unchanged by step 08)</td></tr>
+<tr><td class="mono">golden.c</td><td>C models for CRC-32 and FIR8; <code>-DMUTANT=1..4</code> injects model bugs</td></tr>
+<tr><td class="mono">fir_tb.sv, crc_tb.sv</td><td>layered self-checking TBs; plusargs <code>+SEED +N/+MSGS +MODE=stream|batch +FLIP +FAST</code></td></tr>
+<tr><td class="mono">bench.sv, bench.c, wall.c</td><td>cost per call, with a wall-clock DPI helper</td></tr>
+<tr><td class="mono">ex/</td><td>exercise solutions: <code>shift.c</code>/<code>shift_tb.sv</code> (E3, E4), <code>residue_tb.sv</code> (E8), <code>golden_cpp.cpp</code> (E9), <code>len_tb.sv</code> (E12)</td></tr>
+<tr><td class="mono">run.sh, check.py</td><td>build and run everything (about 1–2 min); assert every claim on this page (48 checks)</td></tr>
+</table></div>
+<p><b>Before running, predict:</b> (1) Will stream and batch FIR runs with the same seed print the same digest? (2) Which mutant produces exactly as many errors as there are saturated outputs? (3) Will batch-mode CRC catch <code>+FLIP=500</code>? (4) Is <code>fir8_block256</code> much faster per sample than <code>fir8_step</code>?</p>
+<pre class="sv"><code>cd tutorial/06_golden_model_c/lab
+python3 check.py              <span class="c"># runs run.sh, then asserts; prints the bench numbers</span>
+python3 check.py --no-run     <span class="c"># re-check existing logs</span>
+./build/vl_fir/Vtop +SEED=7 +FAST +N=100000 +MODE=batch   <span class="c"># try your own</span></code></pre>
+<p><b>What to look at:</b> <code>build/*.log</code>, one per run, with <code>LOG</code> lines (<code>fir_run</code>, <code>fir_sb</code>, <code>crc_sb</code>, <code>mismatch</code>, <code>bench</code>) and <code>PASS</code>/<code>FAIL</code>. <code>build/results.txt</code> counts PASS/FAIL per TB: 12 PASS and 8 FAIL, and the 8 FAILs are the intended ones (flips and mutants).</p>
+<div class="tbl"><table>
+<tr><th>Experiment</th><th>Command (run.sh)</th><th>Result (this run)</th></tr>
+<tr><td>FIR, seed 1, stream / batch</td><td class="mono">+SEED=1 +N=500 [+MODE=batch]</td><td>PASS, 500 compared, digest <code>99b218a1</code> both, 142 saturated</td></tr>
+<tr><td>FIR, seed 2</td><td class="mono">+SEED=2 +N=500</td><td>PASS, digest <code>949caf20</code>, 248 saturated</td></tr>
+<tr><td>FIR, fake DUT bug</td><td class="mono">+FAST +N=2000 +FLIP=100</td><td>FAIL, errors=1, first=100 (stream and batch)</td></tr>
+<tr><td>CRC, stream / batch</td><td class="mono">+SEED=1 +MSGS=12</td><td>PASS, 1769 / 12 compared, check value <code>cbf43926</code></td></tr>
+<tr><td>CRC, glitch</td><td class="mono">+FLIP=500</td><td>stream FAIL first=500; batch <b>PASS</b> (blind)</td></tr>
+<tr><td>Mutants 1 / 2 / 4 (FIR)</td><td class="mono">-DMUTANT=n, +SEED=3 +FAST +N=20000</td><td>5337 / 9221 / 2611 errors; first idx 5 / 4 / 37</td></tr>
+<tr><td>Mutant 3 (CRC)</td><td class="mono">-DMUTANT=3</td><td>stream 73 errors first cycle 67; batch 2 of 12 frames, first cycle 111</td></tr>
+<tr><td>C++ swap</td><td class="mono">ex/golden_cpp.cpp</td><td>same digest <code>ca87667f</code>, PASS</td></tr>
+<tr><td>Both models linked / no header</td><td class="mono">dup / nohdr builds</td><td>link errors: <code>duplicate symbol</code> / <code>Undefined symbols</code></td></tr>
+<tr><td>Throughput, FIR TB</td><td class="mono">+FAST +N=200000</td><td>stream 1.64 s, batch 1.31 s (≈ 8 µs/sample)</td></tr>
+<tr><td>randomize() cost</td><td class="mono">+N=500 (no +FAST)</td><td>5.6 s, ≈ 11 ms/sample, 4 runs in parallel</td></tr>
+</table></div>
+<p><b>Things to try:</b> in <code>crc_scoreboard::edge_seen</code>, apply the byte when <code>clear</code> and <code>valid</code> arrive together (the opposite of the RTL's priority) and watch which cycle fails first; change <code>BLK</code> in the FIR scoreboard to 1 and re-time batch mode; add a fifth mutant (round half-even) and predict its kill rate before running (hint: it only differs on exact ties).</p>
+
+<!-- ============================================================== §5 -->
+<h2 id="s5"><span class="no">§5 · Cheat sheet</span>For the next block you verify</h2>
+<div class="tbl"><table>
+<tr><th>Need</th><th>SV declaration</th><th>C prototype</th><th>Pitfall</th></tr>
+<tr><td>model instance</td><td class="mono">function chandle m_new(...)</td><td class="mono">void* m_new(...)</td><td>pair with <code>m_free</code>; one per scoreboard, never <code>static</code></td></tr>
+<tr><td>per-item prediction</td><td class="mono">function shortint m_step(input chandle h, input shortint x)</td><td class="mono">short m_step(void* h, short x)</td><td>not <code>pure</code> (state)</td></tr>
+<tr><td>stateless whole message</td><td class="mono">pure function int unsigned m_msg(input byte unsigned a[], input int len)</td><td class="mono">unsigned int m_msg(const svOpenArrayHandle a, int len)</td><td>Verilator: fixed-size actual only; check <code>len ≤ svSize</code></td></tr>
+<tr><td>block, in and out</td><td class="mono">function void m_block(input chandle h, input shortint x[], output shortint y[], input int n)</td><td class="mono">void m_block(void* h, const svOpenArrayHandle x, const svOpenArrayHandle y, int n)</td><td>loop over the per-item core; <code>svGetArrayPtr</code> may be NULL</td></tr>
+<tr><td>fixed config array</td><td class="mono">input shortint coef[8]</td><td class="mono">const short* coef</td><td>copy it: the pointer is only valid during the call</td></tr>
+<tr><td>prototype check</td><td>—</td><td class="mono">#include "Vtop__Dpi.h"</td><td>also gives <code>extern "C"</code>; other sims: <code>-dpiheader</code></td></tr>
+</table></div>
+<h4>Rules</h4>
+<ol>
+<li>The model implements the spec, not the RTL; anchor it to an external value.</li>
+<li>Untimed model, timed testbench: latency and gaps live in the monitor/scoreboard.</li>
+<li>Feed the model from the monitor's sampled values.</li>
+<li>Compare at monitor time, bit-exactly; report first mismatch in full, count the rest, check the counts.</li>
+<li>Per-frame checks of a state output are blind between frames.</li>
+<li><code>pure</code> only for stateless functions.</li>
+<li>Abort on contract violations; report mismatches.</li>
+<li>Weight the corners; one seed plusarg; no randomness in the checker.</li>
+<li>Keep mutants in the regression as must-fail tests.</li>
+<li>In Verilator, DPI into C costs nanoseconds: measure the solver and the TB first. Batch for Python, not for C.</li>
+</ol>
+
+<p class="foot">Spear &amp; Tumbush, <em>SystemVerilog for Verification</em>, 3rd ed. (Springer, 2012), ch. 1 (§1.9–1.11) and ch. 12 (§12.2–12.4, Ex. 12.1–12.5); IEEE Std 1800-2023 §35 and Annex H. DUTs: <code>tutorial/common/rtl</code>. Every number on this page comes from <code>06_golden_model_c/lab/check.py</code> (Verilator 5.052, macOS x86_64); timings vary with machine load.</p>
+</main>
+</div>
+</body>
+</html>

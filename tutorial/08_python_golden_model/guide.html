@@ -1,0 +1,919 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Step 08: Python golden model</title>
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../assets/guide.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/contrib/auto-render.min.js"></script>
+<script defer src="../assets/quiz.js"></script>
+<script>
+try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
+document.addEventListener('DOMContentLoaded',function(){
+  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
+  var toc=document.getElementById('toc');
+  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
+  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
+  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
+  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
+});
+function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
+function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
+</script>
+<style>
+/* local tweaks: code blocks */
+pre.sv,pre.cc,pre.py{font-size:13px;line-height:1.5}
+pre .c{color:var(--muted);font-style:italic}
+pre .k{color:var(--acc);font-weight:600}
+p code,li code,td code{overflow-wrap:anywhere}
+td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
+.steps{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-family:var(--font-mono);font-size:12.5px;margin-top:8px}
+</style>
+</head>
+<body>
+<svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-acc" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-2" d="M0,1 L10,5 L0,9 z"/></marker>
+</defs></svg>
+
+<div class="page">
+<details class="toc" id="toc"><summary>Contents</summary><nav><ol>
+<li class="grp">0 · Tutorial</li>
+<li><a href="#tutorial">The step in one idea</a></li>
+<li><a href="#r-contract">0.1 One contract, two backends</a></li>
+<li><a href="#r-crc">0.2 CRC-32 with zlib</a></li>
+<li><a href="#r-where">0.3 Where to compare</a></li>
+<li><a href="#r-chandle">0.4 A stateful model behind a chandle</a></li>
+<li><a href="#r-exact">0.5 Bit-exact fixed point</a></li>
+<li><a href="#r-batch">0.6 Batching with zero-copy arrays</a></li>
+<li><a href="#r-wide">0.7 Integers of any width</a></li>
+<li><a href="#r-errors">0.8 Errors into the scoreboard</a></li>
+<li><a href="#r-lifetime">0.9 Buffer lifetime</a></li>
+<li><a href="#r-bug">0.10 Proving the scoreboard can fail</a></li>
+<li><a href="#r-cost">0.11 What it costs</a></li>
+<li><a href="#r-generic">0.12 A generic bridge</a></li>
+<li><a href="#r-beyond">0.13 Beyond hand-written glue</a></li>
+<li><a href="#r-recipe">0.14 Recipe</a></li>
+<li class="grp">Practice</li>
+<li><a href="#s1">1 · Objectives</a></li>
+<li><a href="#s2">2 · Exercises</a></li>
+<li><a href="#s3">3 · Quiz</a></li>
+<li><a href="#s4">4 · Lab</a></li>
+<li><a href="#s5">5 · Cheat sheet</a></li>
+</ol></nav></details>
+
+<main>
+<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
+<div class="steps"><a href="../07_embedding_python/guide.html">← 07 Embedding Python</a><a href="../index.html">Tutorial index →</a></div>
+<p class="kicker">DPI-C tutorial · Part B · Step 08</p>
+<h1>Python as the golden model</h1>
+<p class="deck">The reference model you trust most is often three lines of Python: <code>zlib.crc32</code>, a numpy convolution, an unbounded <code>int</code>. This step wires such models to the two DUTs in <code>common/rtl</code> behind a DPI contract that a C model could implement just as well, and measures what the convenience costs.</p>
+<p class="meta"><span>Prereqs: steps <a href="../02_data_types/guide.html">02</a> (svBitVecVal), <a href="../03_state_and_handles/guide.html">03</a> (chandle), <a href="../04_arrays_structs_strings/guide.html">04</a> (open arrays), <a href="../06_golden_model_c/guide.html">06</a> (scoreboard), <a href="../07_embedding_python/guide.html">07</a> (CPython C API)</span><span>Measured on Verilator 5.052 + Python 3.14.7 + numpy 2.5.2, macOS x86_64</span><span>Solutions are hidden: think first</span></p>
+<div class="tools"><button onclick="setAll(true)">Open all</button><button onclick="setAll(false)">Close all</button></div>
+
+<h2 id="tutorial"><span class="no">§0 · Tutorial</span>The step, explained</h2>
+<p class="lead">Step 06 built the golden-model pattern with a C reference; step 07 showed how to start an interpreter inside the simulator and call into it. This step puts the two together for real hardware: a CRC-32 stream unit whose reference is <code>zlib.crc32</code>, and an 8-tap Q1.15 FIR whose reference is a numpy convolution. The interesting questions are not "how do I call Python" (step 07 answered that) but: how do you shape the DPI boundary so the model is swappable, how do you move arrays and 200-bit integers across it without copies or truncation, where do errors go, how do you keep the model bit-exact, and when does the per-call cost start to dominate your regression time.</p>
+<p>Everything below runs in <code>lab/</code>. Every number in this page comes from <code>build/</code> logs and is asserted by <code>lab/check.py</code> (51 asserts), except the throughput figures in 0.11, which are machine dependent: check.py asserts their ratios, not their values.</p>
+
+<!-- 0.1 -->
+<h3 id="r-contract"><span class="no">0.1</span>One contract, two backends</h3>
+<p>The single most useful design decision in this step was already made in <a href="../06_golden_model_c/guide.html">step 06</a>: the DPI imports are written <b>as if the model were C</b>, with plain C types, and kept in one package, <code>06_golden_model_c/lab/golden_pkg.sv</code>. This step <b>reuses that file unchanged</b> (run.sh points at it; there is no copy). The testbench only knows the package. Two C files implement the same symbols: step 06's <code>golden.c</code> computes the answer itself, this step's <code>golden_py.c</code> forwards each call into Python (<code>golden.py</code>). Which one you get is decided by the link line, not by the SV source.</p>
+<pre class="sv"><code><span class="c">// 06_golden_model_c/lab/golden_pkg.sv (shared with step 06, unchanged)</span>
+<span class="k">package</span> golden_pkg;
+  <span class="k">import</span> "DPI-C" <span class="k">function chandle</span>      crc32_new();
+  <span class="k">import</span> "DPI-C" <span class="k">function void</span>         crc32_free  (<span class="k">input chandle</span> h);
+  <span class="k">import</span> "DPI-C" <span class="k">function void</span>         crc32_clear (<span class="k">input chandle</span> h);
+  <span class="k">import</span> "DPI-C" <span class="k">function int unsigned</span> crc32_update(<span class="k">input chandle</span> h, <span class="k">input byte unsigned</span> b);
+  <span class="k">import</span> "DPI-C" <span class="k">pure function int unsigned</span> crc32_msg(<span class="k">input byte unsigned</span> msg[], <span class="k">input int</span> len);
+  <span class="k">import</span> "DPI-C" <span class="k">function chandle</span>  fir8_new  (<span class="k">input shortint</span> coef[8]);
+  <span class="k">import</span> "DPI-C" <span class="k">function void</span>     fir8_free (<span class="k">input chandle</span> h);
+  <span class="k">import</span> "DPI-C" <span class="k">function shortint</span> fir8_step (<span class="k">input chandle</span> h, <span class="k">input shortint</span> x);
+  <span class="k">import</span> "DPI-C" <span class="k">function void</span>     fir8_block(<span class="k">input chandle</span> h, <span class="k">input shortint</span> x[],
+                                              <span class="k">output shortint</span> y[], <span class="k">input int</span> n);
+<span class="k">endpackage</span></code></pre>
+<pre class="sv"><code><span class="c"># lab/run.sh: same testbench, two binaries</span>
+G6=../../06_golden_model_c/lab                       <span class="c"># the contract and the C backend live in step 06</span>
+PY="$G6/golden_pkg.sv py_extra_pkg.sv golden_py.c $G6/wall.c $(py_flags)"
+C="$G6/golden_pkg.sv $G6/golden.c $G6/wall.c"
+vlb crc_py  $PY $RTL/crc32_stream.sv tb_crc.sv
+vlb crc_c   $C  $RTL/crc32_stream.sv tb_crc.sv</code></pre>
+<p>Things only Python can offer (a 200-bit multiply on unbounded ints, run-time bug selection, the text of a Python exception, a generic call-anything bridge) do not belong in a contract that C must also implement. They live in a second, Python-only package, <code>lab/py_extra_pkg.sv</code> (<code>py_mul_wide</code>, <code>py_set_bug</code>, <code>py_last_error</code>, <code>py_call_i64</code>), also implemented in <code>golden_py.c</code>. A testbench that must run on both backends imports only <code>golden_pkg</code>; <code>tb_crc.sv</code>, <code>tb_fir.sv</code> and <code>tb_perf.sv</code> do.</p>
+
+<figure class="fig wide">
+<svg class="dg" viewBox="0 0 760 250" role="img" aria-label="One SV contract, two backends. The testbenches tb_crc and tb_fir import only golden_pkg from step 06. At link time either golden_py.c is linked, which calls golden.py through the embedded CPython interpreter, where golden.py uses zlib, numpy and Python ints; or step 06 golden.c is linked, which implements the same symbols in plain C. The DUTs crc32_stream and fir8 come from common/rtl.">
+<text class="ttl" x="10" y="20">SV (unchanged)</text>
+<rect class="box" x="10" y="34" width="150" height="40" rx="8"/><text class="lbl" x="85" y="54">tb_crc / tb_fir</text>
+<rect class="box soft" x="10" y="90" width="150" height="40" rx="8"/><text class="lbl" x="85" y="110">DUT (common/rtl)</text>
+<path class="e" d="M85,74 V90" marker-end="url(#ah)"/>
+<rect class="box hot" x="200" y="34" width="140" height="96" rx="8"/><text class="lbl" x="270" y="62">golden_pkg</text><text class="t mid" x="270" y="82">(step 06)</text><text class="t mid" x="270" y="100">import "DPI-C"</text><text class="t mid" x="270" y="118">C types only</text>
+<path class="e" d="M160,54 H200" marker-end="url(#ah)"/>
+<text class="ttl" x="390" y="20">link time: pick one</text>
+<rect class="box" x="390" y="34" width="130" height="40" rx="8"/><text class="lbl" x="455" y="54">golden_py.c</text>
+<rect class="box" x="390" y="150" width="130" height="40" rx="8"/><text class="lbl" x="455" y="170">06 golden.c</text>
+<path class="e" d="M340,70 C365,60 370,54 390,54" marker-end="url(#ah)"/>
+<path class="e dash" d="M340,100 C370,120 365,170 390,170" marker-end="url(#ah)"/>
+<rect class="box soft" x="560" y="34" width="190" height="40" rx="8"/><text class="lbl" x="655" y="54">CPython 3.14</text>
+<path class="e" d="M520,54 H560" marker-end="url(#ah)"/>
+<rect class="box soft" x="560" y="96" width="190" height="40" rx="8"/><text class="lbl" x="655" y="116">golden.py</text>
+<path class="e" d="M655,74 V96" marker-end="url(#ah)"/>
+<text class="note mid" x="655" y="158">zlib · numpy · int</text>
+<text class="note" x="540" y="176">plain C, same symbols,</text>
+<text class="note" x="540" y="194">same results (asserted)</text>
+<text class="note" x="10" y="232">The testbench cannot tell which backend it was linked with; check.py runs both and requires identical logs.</text>
+</svg>
+<figcaption><b>Fig. 1</b>The model is chosen by the link line. Keeping the contract in C types (not "Python-shaped" arguments such as strings of code or pickled objects) is what makes the C backend possible, and the C backend is what makes the Python one trustworthy: two independent implementations that agree.</figcaption>
+</figure>
+
+<div class="callout hv"><p>Design the imports for the <i>model</i>, not for the language behind it. A scoreboard that calls <code>crc32_msg(msg, len)</code> survives a rewrite of the model in C, C++, Python or a SystemC TLM model. A scoreboard that calls <code>py_eval("zlib.crc32(...)")</code> is married to Python forever.</p></div>
+
+<p>Two small conventions from step 01 matter here. Both backends <code>#include "Vtop__Dpi.h"</code>, the prototype header Verilator generates from the imports, so a C signature that drifts from <code>golden_pkg.sv</code> is a compile error rather than a crash. And both are compiled as C++ by Verilator (clang prints <code>treating 'c' input as 'c++'</code>), so the definitions sit inside <code>#ifdef __cplusplus extern "C" {</code>.</p>
+
+<!-- 0.2 -->
+<h3 id="r-crc"><span class="no">0.2</span>CRC-32: the model is one line</h3>
+<p><code>crc32_stream.sv</code> implements CRC-32/IEEE 802.3: reflected, polynomial <code>0xEDB88320</code>, initial value and final XOR <code>0xFFFFFFFF</code>. Its output <code>crc</code> is the CRC of every byte accepted since the last <code>clear</code>, i.e. the inverted register. That is exactly the value Python's <code>zlib.crc32</code> returns, and <code>zlib.crc32(data, value)</code> continues a running CRC: the CRC of <code>a + b</code> equals <code>zlib.crc32(b, zlib.crc32(a))</code>. So the model is:</p>
+<pre class="py"><code><span class="c"># lab/golden.py</span>
+<span class="k">def</span> crc32_update(crc, data):
+    <span class="c">"""crc: CRC of the bytes so far (0 for an empty message); data: any bytes-like chunk."""</span>
+    <span class="k">return</span> zlib.crc32(data, crc)
+
+<span class="k">class</span> Crc32:                                  <span class="c"># behind the chandle of crc32_new/clear/update</span>
+    <span class="k">def</span> __init__(self): self.crc = 0
+    <span class="k">def</span> clear(self):    self.crc = 0
+    <span class="k">def</span> update(self, b):
+        self.crc = zlib.crc32(bytes((b,)), self.crc)
+        <span class="k">return</span> self.crc                        <span class="c"># = the DUT's crc output after this byte</span></code></pre>
+<p>Notice what is <i>not</i> there: no table, no bit loop, no reflection, no XOR-out. That is the point of a Python golden model: the reference comes from a library used by every zip file on the planet, not from a second hand-written copy of the algorithm you are trying to verify. The lab's first check is the standard check value: the CRC of the ASCII string <code>"123456789"</code> is <code>0xCBF43926</code>, and the DUT prints <code>LOG crc check_value=cbf43926</code>.</p>
+
+<p>For <code>crc32_msg</code> the C side turns the open array into a <code>memoryview</code> that points at the simulator's own memory (no copy), calls the cached function, converts the result back, and releases the view:</p>
+<pre class="cc"><code><span class="c">/* lab/golden_py.c */</span>
+<span class="k">unsigned int</span> crc32_msg(<span class="k">const</span> svOpenArrayHandle msg, <span class="k">int</span> len) {
+  <span class="k">if</span> (len &lt; 0 || len &gt; svSize(msg, 1)) { <span class="c">/* contract violation: print */</span> abort(); }   <span class="c">/* as golden.c */</span>
+  PyObject* f = callable("golden", "crc32_update");      <span class="c">/* imported once, then cached */</span>
+  <span class="k">if</span> (!f) <span class="k">return</span> 0;
+  PyObject* mv = PyMemoryView_FromMemory((<span class="k">char</span>*)svGetArrayPtr(msg), len, PyBUF_READ);
+  PyObject* r  = PyObject_CallFunction(f, "IO", 0u, mv);    <span class="c">/* "I" = unsigned int */</span>
+  <span class="k">unsigned int</span> v = r ? (<span class="k">unsigned int</span>)PyLong_AsUnsignedLong(r) : 0;
+  <span class="k">if</span> (!r || PyErr_Occurred()) { fail("crc32_update"); v = 0; }   <span class="c">/* As*() returns -1 on error */</span>
+  Py_XDECREF(r);
+  release(mv, "crc32_update");                           <span class="c">/* see 0.9 */</span>
+  <span class="k">return</span> v;
+}</code></pre>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 210" role="img" aria-label="Zero-copy path of a CRC chunk. The SV fixed array msg of 256 bytes lives in the simulator's memory. The open-array handle gives svGetArrayPtr, a pointer to element 0. PyMemoryView_FromMemory wraps that pointer and length len as a read-only memoryview without copying. zlib.crc32 reads the bytes through the buffer protocol. Only the 32-bit result is converted back.">
+<text class="ttl" x="10" y="20">simulator memory</text>
+<rect class="box" x="10" y="34" width="300" height="34" rx="6"/>
+<g class="grid"><line x1="40" y1="34" x2="40" y2="68"/><line x1="70" y1="34" x2="70" y2="68"/><line x1="100" y1="34" x2="100" y2="68"/><line x1="130" y1="34" x2="130" y2="68"/><line x1="160" y1="34" x2="160" y2="68"/></g>
+<rect class="box hot" x="10" y="34" width="180" height="34" rx="6" style="fill-opacity:.35"/>
+<text class="t" x="16" y="56">msg[0]</text><text class="t" x="196" y="56">… msg[255]</text>
+<text class="note" x="10" y="86">byte unsigned msg[256] (fixed array)</text>
+<text class="hotx mid" x="100" y="104">first len bytes</text>
+<path class="e hot" d="M100,110 V140" marker-end="url(#ah-acc)"/>
+<rect class="box soft" x="20" y="140" width="160" height="40" rx="8"/><text class="lbl" x="100" y="160">svGetArrayPtr()</text>
+<path class="e" d="M180,160 H250" marker-end="url(#ah)"/>
+<rect class="box soft" x="250" y="140" width="200" height="40" rx="8"/><text class="lbl" x="350" y="160">memoryview (PyBUF_READ)</text>
+<path class="e" d="M450,160 H520" marker-end="url(#ah)"/>
+<rect class="box" x="520" y="140" width="190" height="40" rx="8"/><text class="lbl" x="615" y="160">zlib.crc32(mv, crc)</text>
+<path class="e dash" d="M615,140 C615,80 420,50 312,50" marker-end="url(#ah)"/>
+<text class="note" x="470" y="30">reads in place, no copy</text>
+<text class="note" x="520" y="200">one int back</text>
+</svg>
+<figcaption><b>Fig. 2</b>Arrays cross by pointer, not by value. <code>svGetArrayPtr</code> is valid only for open arrays in "standard layout"; in Verilator that means a fixed-size unpacked array (step 04). The only conversion is the 32-bit result.</figcaption>
+</figure>
+
+<div class="callout note" style="--c-label:'In Verilator'"><p>The actual argument of an open-array formal must be a <b>fixed-size</b> unpacked array. A dynamic array is rejected at build time (<code>Unsupported: DPI argument of type DYNARRAYDTYPE</code>; with the import declared in the module, the message is the internal error <code>Passing dynamic array or queue as actual argument to DPI open array is not yet supported</code>). An assignment pattern literal is rejected too (<code>Unsupported: Assignment pattern applies against non-struct/union data type: 'UNSIZEDARRAYDTYPE'</code>). That is why the contract passes <code>len</code> next to a fixed <code>msg[256]</code>, the C idiom of "buffer plus length". Commercial simulators accept dynamic arrays and queues here; the extra <code>len</code> costs nothing there.</p></div>
+
+<!-- 0.3 -->
+<h3 id="r-where"><span class="no">0.3</span>Where to compare: per byte or per message</h3>
+<p>A running CRC lets the scoreboard check the DUT at two granularities with the same model. <b>Per byte</b>: after every accepted byte, update the expected CRC with a one-byte chunk and compare against <code>crc</code>. <b>Per message</b>: collect the bytes, call the model once at the end, compare once. Both are in <code>tb_crc.sv</code>, selected by <code>+per_byte</code>:</p>
+<pre class="sv"><code><span class="k">if</span> (per_byte) <span class="k">begin</span>                                    <span class="c">// after each accepted byte</span>
+  exp_crc = crc32_update(h, msg[i]); n_calls++;          <span class="c">// h = crc32_new(), crc32_clear(h) per message</span>
+  check($sformatf("msg %0d byte %0d", m, i));
+<span class="k">end</span>
+...
+<span class="k">if</span> (!per_byte) <span class="k">begin</span>                                   <span class="c">// once per message</span>
+  exp_crc = crc32_msg(msg, len); n_calls++;
+  check($sformatf("msg %0d", m));
+<span class="k">end</span></code></pre>
+<p>The run sends 300 messages (one empty, one <code>"123456789"</code>, 298 random of 1–256 bytes) with random idle cycles, 39 480 bytes in total, and passes in all four combinations:</p>
+<div class="tbl"><table>
+<tr><th>run</th><th class="num">model calls</th><th class="num">checks</th><th class="num">errors</th><th class="num">sim wall time</th></tr>
+<tr><td>Python, per message</td><td class="num">300</td><td class="num">300</td><td class="num">0</td><td class="num">25 ms</td></tr>
+<tr><td>Python, per byte</td><td class="num">39 480</td><td class="num">39 480</td><td class="num">0</td><td class="num">55 ms</td></tr>
+<tr><td>C, per message</td><td class="num">300</td><td class="num">300</td><td class="num">0</td><td class="num">23 ms</td></tr>
+<tr><td>C, per byte</td><td class="num">39 480</td><td class="num">39 480</td><td class="num">0</td><td class="num">42 ms</td></tr>
+</table></div>
+<p>(Wall times from one run, measured from after <code>crc32_new()</code>, so the ~0.1 s of interpreter start-up and imports (0.11) is not in them. Most of the time is the DUT simulation itself, which is why the backends are close; the numbers move by tens of milliseconds from run to run on a loaded machine. Compare the call counts, which are exact, not these times; 0.11 measures the per-call cost properly.)</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 190" role="img" aria-label="Timeline of one message of six bytes with idle cycles. Per-byte checking calls the model six times and compares six times, so a wrong byte is caught on the cycle it happens. Per-message checking calls the model once after the last byte and compares once, so an error is detected later and only localized to the message.">
+<text class="ttl" x="10" y="18">accepted bytes (in_valid)</text>
+<g>
+<rect class="s0" x="60" y="30" width="40" height="22" rx="3"/><rect class="s0" x="100" y="30" width="40" height="22" rx="3"/>
+<rect class="ghost" x="140" y="30" width="40" height="22" rx="3"/>
+<rect class="s0" x="180" y="30" width="40" height="22" rx="3"/><rect class="s0" x="220" y="30" width="40" height="22" rx="3"/>
+<rect class="ghost" x="260" y="30" width="40" height="22" rx="3"/><rect class="ghost" x="300" y="30" width="40" height="22" rx="3"/>
+<rect class="s0" x="340" y="30" width="40" height="22" rx="3"/><rect class="s0" x="380" y="30" width="40" height="22" rx="3"/>
+</g>
+<text class="t" x="10" y="45">clear</text>
+<text class="ttl" x="10" y="86">per byte</text>
+<g class="e hot"><line x1="80" y1="70" x2="80" y2="100"/><line x1="120" y1="70" x2="120" y2="100"/><line x1="200" y1="70" x2="200" y2="100"/><line x1="240" y1="70" x2="240" y2="100"/><line x1="360" y1="70" x2="360" y2="100"/><line x1="400" y1="70" x2="400" y2="100"/></g>
+<text class="note" x="440" y="90">6 calls · 6 compares · per cycle</text>
+<text class="ttl" x="10" y="140">per message</text>
+<line class="e hot" x1="420" y1="124" x2="420" y2="154"/>
+<text class="note" x="440" y="144">1 call · 1 compare · per message</text>
+<line class="grid" x1="60" y1="170" x2="420" y2="170"/><text class="t" x="60" y="184">t →</text>
+</svg>
+<figcaption><b>Fig. 3</b>The granularity of the comparison is a scoreboard decision, not a model decision: the same model serves both (<code>crc32_update</code> per byte, <code>crc32_msg</code> per message, one <code>zlib.crc32</code> behind them). Fine-grained checks find the failing cycle; coarse checks cost fewer crossings.</figcaption>
+</figure>
+
+<div class="callout hv"><p>Debug with fine-grained checks, regress with coarse ones. A per-transaction comparison is what you want while the DUT is broken (the first mismatching cycle is the bug report). Once the block is stable, a per-message or per-burst comparison does the same job with 100× fewer model calls. Make it a plusarg.</p></div>
+
+<!-- 0.4 -->
+<h3 id="r-chandle"><span class="no">0.4</span>A stateful model behind a chandle</h3>
+<p>A FIR has state: the last seven inputs. Step 03 kept per-instance C state behind a <code>chandle</code>; with Python the natural state container is an object, and the chandle simply <i>is</i> the <code>PyObject*</code>. The ownership rule is the whole design: <b>the chandle owns exactly one strong reference</b>. <code>fir8_new</code> returns the new reference that the constructor call produced (no extra <code>Py_INCREF</code>, no <code>Py_DECREF</code>), and <code>fir8_free</code> drops it.</p>
+<pre class="cc"><code><span class="k">void</span>* fir8_new(<span class="k">const short</span>* coef) {                 <span class="c">/* input shortint coef[8] -&gt; const short* */</span>
+  PyObject* cls = callable("golden", "Fir8");
+  <span class="k">if</span> (!cls) <span class="k">return</span> NULL;
+  PyObject* c = Py_BuildValue("[hhhhhhhh]", coef[0], coef[1], coef[2], coef[3],
+                                            coef[4], coef[5], coef[6], coef[7]);
+  PyObject* obj = PyObject_CallOneArg(cls, c);           <span class="c">/* new reference ...           */</span>
+  Py_DECREF(c);
+  <span class="k">if</span> (!obj) fail("Fir8()");
+  <span class="k">return</span> obj;                                            <span class="c">/* ... handed to SV as the chandle */</span>
+}
+<span class="k">void</span> fir8_free(<span class="k">void</span>* h) { Py_XDECREF((PyObject*)h); }    <span class="c">/* last ref: Fir8.__del__ runs here */</span></code></pre>
+<p>On the SV side nothing distinguishes this from step 03's C counter: <code>h[u] = fir8_new(coef[u])</code> per DUT instance, <code>fir8_step(h[u], x)</code> per sample, <code>fir8_free(h[u])</code> at the end. <code>tb_fir.sv</code> instantiates two <code>fir8</code> with different coefficient sets (a sharp one that saturates often and a low-pass), so two independent Python objects carry two histories. The lab proves the reference count with a class counter <code>Fir8.live</code>, read through the generic bridge of 0.12: <code>LOG live_before value=0</code>, <code>live_after_new value=1</code>, <code>live_after_free value=0</code>.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 200" role="img" aria-label="Two DUT instances and two model objects. SV holds chandle h[0] and h[1]. Each chandle is a PyObject pointer to a distinct Fir8 instance on the Python heap with reference count 1, each with its own coefficients and history. fir8_free decrements the count to zero and the object is destroyed, decrementing Fir8.live.">
+<text class="ttl" x="10" y="18">SV</text>
+<rect class="box" x="10" y="30" width="120" height="36" rx="6"/><text class="lbl" x="70" y="48">g[0].dut</text>
+<rect class="box" x="10" y="120" width="120" height="36" rx="6"/><text class="lbl" x="70" y="138">g[1].dut</text>
+<rect class="reg" x="170" y="30" width="90" height="36" rx="6"/><text class="lbl" x="215" y="48">h[0]</text>
+<rect class="reg" x="170" y="120" width="90" height="36" rx="6"/><text class="lbl" x="215" y="138">h[1]</text>
+<text class="note" x="160" y="96">chandle = PyObject*</text>
+<path class="e" d="M260,48 H340" marker-end="url(#ah)"/><path class="e" d="M260,138 H340" marker-end="url(#ah)"/>
+<text class="ttl" x="340" y="18">Python heap</text>
+<rect class="box hot" x="340" y="26" width="250" height="44" rx="8"/><text class="lbl" x="465" y="42">Fir8 #1  refcnt = 1</text><text class="t mid" x="465" y="60">c = sharp · h = [7 samples]</text>
+<rect class="box hot" x="340" y="116" width="250" height="44" rx="8"/><text class="lbl" x="465" y="132">Fir8 #2  refcnt = 1</text><text class="t mid" x="465" y="150">c = low-pass · h = [7 samples]</text>
+<rect class="box soft" x="615" y="70" width="100" height="44" rx="8"/><text class="lbl" x="665" y="86">Fir8.live</text><text class="t mid" x="665" y="104">2 → 0</text>
+<path class="e dash" d="M590,48 C605,48 608,78 615,84" marker-end="url(#ah)"/>
+<path class="e dash" d="M590,138 C605,138 608,108 615,102" marker-end="url(#ah)"/>
+<text class="note" x="340" y="190">fir8_free(h): DECREF → 0 → __del__ → live − 1</text>
+</svg>
+<figcaption><b>Fig. 4</b>One Python object per DUT instance. The chandle owns one reference; SV must call <code>fir8_free</code> exactly once, before the interpreter is finalized at process exit.</figcaption>
+</figure>
+
+<div class="callout trap"><p>Two classic reference bugs, both silent in short tests. <b>Too few references</b>: returning a <i>borrowed</i> pointer as the chandle (for example an object fetched with <code>PyList_GetItem</code>) means the object can die while SV still holds the handle; the next <code>fir8_step</code> reads freed memory. <b>Too many</b>: an extra <code>Py_INCREF</code> "to be safe" leaks every model instance; with one object per test nobody notices, with one per transaction the simulator grows without bound. A counter like <code>Fir8.live</code> turns both into a visible number.</p></div>
+
+<p>The per-sample call uses <code>PyObject_CallMethodOneArg</code> with the method name interned once in a <code>static</code>, so no string object is built per sample:</p>
+<pre class="cc"><code><span class="k">short</span> fir8_step(<span class="k">void</span>* h, <span class="k">short</span> x) {
+  <span class="k">static</span> PyObject* name;
+  <span class="k">if</span> (!h) <span class="k">return</span> 0;
+  <span class="k">if</span> (!name) name = PyUnicode_InternFromString("step");
+  PyObject* px = PyLong_FromLong(x);
+  PyObject* r  = PyObject_CallMethodOneArg((PyObject*)h, name, px);
+  Py_DECREF(px);
+  <span class="k">short</span> y = r ? (<span class="k">short</span>)PyLong_AsLong(r) : 0;
+  <span class="k">if</span> (!r || PyErr_Occurred()) { fail("Fir8.step"); y = 0; }
+  Py_XDECREF(r);
+  <span class="k">return</span> y;
+}</code></pre>
+
+<!-- 0.5 -->
+<h3 id="r-exact"><span class="no">0.5</span>Bit-exact fixed point</h3>
+<p>A golden model is only useful if it is bit-exact; "close enough" turns every mismatch into a judgment call. <code>fir8.sv</code> defines its arithmetic in its header, and the model must reproduce each step:</p>
+<div class="eq">
+$$\mathrm{acc}[n] = \sum_{k=0}^{7} c_k\,x[n-k], \qquad y[n] = \mathrm{sat}_{16}\!\left(\left\lfloor \frac{\mathrm{acc}[n] + 2^{14}}{2^{15}} \right\rfloor\right)$$
+<p class="read"><b>Reading in HW:</b> eight 16×16 products into a 35-bit accumulator (no loss: $|\mathrm{acc}| \le 8 \cdot 2^{30} \lt 2^{34}$), add half an LSB of the output format, arithmetic shift right by 15 (floor), clamp to $[-2^{15}, 2^{15}-1]$.</p>
+</div>
+<p>Each piece has a Python twin that matches SV exactly, provided you stay in integers:</p>
+<ul>
+<li><b>Products and sums</b>: Python <code>int</code> is unbounded; numpy <code>int64</code> is wide enough (34 bits needed). Never use <code>float</code>: <code>np.convolve</code> on float64 is exact only up to 53 bits and you would be relying on luck.</li>
+<li><b>Floor shift</b>: <code>&gt;&gt;</code> on a negative Python <code>int</code> or numpy <code>int64</code> rounds toward −∞, like SV <code>&gt;&gt;&gt;</code> on a signed value. C's <code>&gt;&gt;</code> on a negative signed value is implementation-defined in C (defined as arithmetic since C++20, and arithmetic on every real compiler); the C backend comments it.</li>
+<li><b>Saturation</b>: <code>min(32767, max(-32768, r))</code> or <code>np.clip</code>.</li>
+<li><b>History</b>: the DUT's delay line only shifts when <code>in_valid</code> is high; the model only advances when it is called. Calling the model on every clock instead of every accepted sample is the most common stateful-model bug (see exercise E11 for its cousin, reset).</li>
+</ul>
+<pre class="py"><code><span class="c"># lab/golden.py: Fir8.step (per sample) and Fir8.block (per array)</span>
+<span class="k">def</span> step(self, x):
+    c, h = self.cl, self.h                          <span class="c"># plain Python ints: see below</span>
+    acc = c[0]*x + c[1]*h[0] + c[2]*h[1] + c[3]*h[2] + c[4]*h[3] + c[5]*h[4] + c[6]*h[5] + c[7]*h[6]
+    self.h = [x] + h[:6]
+    <span class="k">return</span> self._out(acc)                           <span class="c"># (acc + 2**14) &gt;&gt; 15, then saturate</span>
+
+<span class="k">def</span> block(self, xin, yout):                       <span class="c"># xin/yout: buffers of int16, see 0.6</span>
+    x = np.frombuffer(xin, dtype=np.int16).astype(np.int64)
+    full = np.concatenate([np.array(self.h[::-1], dtype=np.int64), x])   <span class="c"># oldest .. newest</span>
+    acc = np.convolve(full, self.c, mode="valid")   <span class="c"># len(x) outputs, exact in int64</span>
+    np.frombuffer(yout, dtype=np.int16)[:] = self._out(acc)
+    self.h = full[::-1][:7].tolist()
+    <span class="k">return</span> len(x)</code></pre>
+<p><code>golden.py</code> checks itself without any simulator (<code>python3 golden.py</code>): <code>step</code>, <code>block</code> in uneven chunks, a numpy-per-sample variant and a straight transcription of the formula above must agree on 3000 random samples. In simulation, both DUT instances match the model on all 2048 accepted samples; 631 of the 4096 outputs saturate (<code>LOG fir samples=2048 calls=4096 errors=0 saturated=631</code>), with either backend.</p>
+
+<div class="callout trap"><p><b>numpy is slow for eight numbers.</b> The first version of <code>step</code> used <code>np.dot</code> and <code>np.roll</code> on the history. It is correct, and it runs at about <b>29 000 samples/s</b>. The plain-int version above runs at about <b>1 160 000 samples/s</b>, 40× faster (both measured without DPI by check.py). Every numpy call has a fixed overhead of a microsecond or more; it pays off only when one call processes hundreds of elements. Per-sample model: plain Python. Per-block model: numpy.</p></div>
+
+<!-- 0.6 -->
+<h3 id="r-batch"><span class="no">0.6</span>Batching with zero-copy arrays</h3>
+<p>Every model call costs a DPI crossing, an interpreter entry, argument boxing and result unboxing, whatever the model does. Batching moves many samples per call. <code>fir8_block</code> takes an input open array and an <b>output</b> open array; the bridge exposes both to Python as memoryviews over the simulator's buffers, read-only for <code>x</code> and writable for <code>y</code>, so numpy reads the inputs in place and writes the outputs in place:</p>
+<pre class="cc"><code><span class="k">void</span> fir8_block(<span class="k">void</span>* h, <span class="k">const</span> svOpenArrayHandle x, <span class="k">const</span> svOpenArrayHandle y, <span class="k">int</span> n) {
+  <span class="k">if</span> (n &lt; 0 || n &gt; svSize(x, 1) || n &gt; svSize(y, 1)) { <span class="c">/* contract violation */</span> abort(); }
+  <span class="k">if</span> (!h) <span class="k">return</span>;
+  PyObject* mx = PyMemoryView_FromMemory((<span class="k">char</span>*)svGetArrayPtr(x), 2 * n, PyBUF_READ);
+  PyObject* my = PyMemoryView_FromMemory((<span class="k">char</span>*)svGetArrayPtr(y), 2 * n, PyBUF_WRITE);
+  PyObject* r  = PyObject_CallMethod((PyObject*)h, "block", "OO", mx, my);
+  <span class="k">if</span> (!r) fail("Fir8.block");
+  Py_XDECREF(r);
+  release(mx, "Fir8.block x");
+  release(my, "Fir8.block y");
+}</code></pre>
+<p>The scoreboard side collects the DUT's inputs and outputs in fixed arrays of 256, calls the model once per block and compares 256 pairs. Same stimulus, same result: <code>calls=16</code> instead of <code>calls=4096</code>, zero errors, for both instances and both backends.</p>
+<pre class="sv"><code>xs[nb] = in_x; ys[0][nb] = out_y[0]; ys[1][nb] = out_y[1];
+<span class="k">if</span> (++nb == BLK) <span class="k">begin</span>                                <span class="c">// BLK = 256, N = 2048: no partial block</span>
+  <span class="k">for</span> (<span class="k">int</span> u = 0; u &lt; 2; u++) <span class="k">begin</span>
+    fir8_block(h[u], xs, ym, nb); n_calls++;
+    <span class="k">for</span> (<span class="k">int</span> i = 0; i &lt; nb; i++) cmp(u, n - nb + 1 + i, ys[u][i], ym[i]);
+  <span class="k">end</span>
+  nb = 0;
+<span class="k">end</span></code></pre>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 220" role="img" aria-label="What svGetArrayPtr points at in Verilator. For the input open array, the pointer is the address of the SV variable xs itself, so Python reads the SV storage in place, and SV writes after the call are visible through a kept pointer. For the output open array, Verilator passes a temporary on the C stack, at a different address on every call, and copies it into the SV variable ym after the call returns.">
+<text class="ttl" x="10" y="18">input  shortint x[]</text>
+<rect class="box" x="10" y="30" width="170" height="40" rx="6"/><text class="lbl" x="95" y="50">SV xs[256]</text>
+<path class="e hot" d="M180,50 H300" marker-end="url(#ah-acc)"/><text class="t mid" x="240" y="42">same address</text>
+<rect class="box soft" x="300" y="30" width="190" height="40" rx="6"/><text class="lbl" x="395" y="50">memoryview (READ)</text>
+<path class="e" d="M490,50 H560" marker-end="url(#ah)"/>
+<rect class="box" x="560" y="30" width="150" height="40" rx="6"/><text class="lbl" x="635" y="50">numpy reads</text>
+<text class="ttl" x="10" y="112">output shortint y[]</text>
+<rect class="box" x="10" y="124" width="170" height="40" rx="6"/><text class="lbl" x="95" y="144">SV ym[256]</text>
+<rect class="box hot" x="300" y="124" width="190" height="40" rx="6"/><text class="lbl" x="395" y="144">temp on C stack</text>
+<path class="e" d="M490,144 H560" marker-end="url(#ah)"/><path class="e" d="M560,152 H490"/>
+<rect class="box" x="560" y="124" width="150" height="40" rx="6"/><text class="lbl" x="635" y="144">numpy writes</text>
+<path class="e dash" d="M300,150 H180" marker-end="url(#ah)"/><text class="t mid" x="240" y="170">copied back</text>
+<text class="note" x="300" y="200">new address on every call: never keep a pointer to it</text>
+</svg>
+<figcaption><b>Fig. 5</b>Measured in Verilator 5.052 by printing <code>svGetArrayPtr</code>: an input fixed array is passed by address (the variable itself), an output open array is a stack temporary copied back after the call. The LRM allows either; you may only rely on the pointer during the call.</figcaption>
+</figure>
+
+<!-- 0.7 -->
+<h3 id="r-wide"><span class="no">0.7</span>Integers of any width</h3>
+<p>Wide arithmetic is where Python models shine and C models hurt. A <code>bit [99:0]</code> argument arrives in C as <code>const svBitVecVal*</code>: an array of 32-bit words, least significant word first (step 02). A Python <code>int</code> has no width. Since 3.13 the C API converts between the two in one call each: <code>PyLong_FromUnsignedNativeBytes</code> and <code>PyLong_AsNativeBytes</code>.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 200" role="img" aria-label="Memory layout of bit [99:0] as svBitVecVal words. Four 32-bit words, word 0 holds bits 31 to 0, word 1 bits 63 to 32, word 2 bits 95 to 64, word 3 holds bits 99 to 96 in its low 4 bits and 28 unused bits on top, which are masked to zero before conversion. On a little-endian host the 16 bytes form one little-endian byte string that Python reads with a single call. The 200-bit product needs 7 words, the top one holding 8 valid bits.">
+<text class="ttl" x="10" y="18">bit [99:0] a  →  const svBitVecVal* a  (4 words)</text>
+<rect class="box soft" x="10" y="30" width="150" height="40" rx="4"/><text class="lbl" x="85" y="50">w[0]: 31..0</text>
+<rect class="box soft" x="170" y="30" width="150" height="40" rx="4"/><text class="lbl" x="245" y="50">w[1]: 63..32</text>
+<rect class="box soft" x="330" y="30" width="150" height="40" rx="4"/><text class="lbl" x="405" y="50">w[2]: 95..64</text>
+<rect class="box" x="490" y="30" width="170" height="40" rx="4"/>
+<rect class="box hot" x="490" y="30" width="110" height="40" rx="4" style="fill-opacity:.35"/>
+<text class="t" x="496" y="54">unused 28</text><text class="t" x="606" y="54">99..96</text>
+<text class="hotx" x="490" y="88">mask before converting</text>
+<path class="e" d="M85,100 V120" /><path class="e" d="M575,100 V120" /><path class="e" d="M85,120 H575"/>
+<path class="e" d="M325,120 V140" marker-end="url(#ah)"/>
+<rect class="box" x="170" y="140" width="310" height="40" rx="8"/><text class="lbl" x="325" y="160">PyLong_FromUnsignedNativeBytes(w, 16, LE)</text>
+<text class="note" x="500" y="158">p: 7 words, 8 valid</text>
+<text class="note" x="500" y="176">bits in w[6]</text>
+</svg>
+<figcaption><b>Fig. 6</b>LSW-first 32-bit words of a little-endian host are one little-endian byte string, so a single call converts the whole vector (on a big-endian host you would convert word by word). The unused top bits of the last word are not guaranteed to be zero: mask them.</figcaption>
+</figure>
+
+<pre class="cc"><code><span class="k">static</span> PyObject* bits_to_py(<span class="k">const</span> svBitVecVal* v, <span class="k">int</span> nbits) {
+  svBitVecVal w[16];
+  <span class="k">int</span> nw = (nbits + 31) / 32;
+  memcpy(w, v, 4 * nw);
+  <span class="k">if</span> (nbits % 32) w[nw - 1] &amp;= (1u &lt;&lt; (nbits % 32)) - 1;  <span class="c">/* unused top bits */</span>
+  <span class="k">return</span> PyLong_FromUnsignedNativeBytes(w, 4 * nw,
+           Py_ASNATIVEBYTES_LITTLE_ENDIAN | Py_ASNATIVEBYTES_UNSIGNED_BUFFER);
+}
+<span class="k">static int</span> py_to_bits(PyObject* o, svBitVecVal* v, <span class="k">int</span> nbits) {
+  <span class="k">int</span> nw = (nbits + 31) / 32;
+  Py_ssize_t need = PyLong_AsNativeBytes(o, v, 4 * nw, Py_ASNATIVEBYTES_LITTLE_ENDIAN |
+                        Py_ASNATIVEBYTES_UNSIGNED_BUFFER | Py_ASNATIVEBYTES_REJECT_NEGATIVE);
+  <span class="k">if</span> (need &lt; 0) <span class="k">return</span> 0;                                <span class="c">/* not an int, or negative */</span>
+  svBitVecVal top = nbits % 32 ? ~((1u &lt;&lt; (nbits % 32)) - 1) : 0;
+  <span class="k">if</span> (need &gt; 4 * nw || (v[nw - 1] &amp; top)) {             <span class="c">/* does not fit in nbits */</span>
+    PyErr_Format(PyExc_OverflowError, "result does not fit in %d bits", nbits);
+    <span class="k">return</span> 0;
+  }
+  <span class="k">return</span> 1;
+}</code></pre>
+<p>With those two helpers the 100×100→200-bit multiply model is <code>return a * b</code>, exposed as <code>py_mul_wide</code> in the Python-only <code>py_extra_pkg.sv</code>. A C model would need a 15-line schoolbook loop over 32-bit limbs with carries, which is exactly the kind of code you would otherwise have to verify too. The testbench checks the Python model against SV's own wide multiply, <code>200'(a) * 200'(b)</code>, on 1000 vectors including the corner cases (all ones, a carry into bit 100, zero): <code>LOG wide n=1000 errors=0</code> and <code>max_product=ffffffffffffffffffffffffe0000000000000000000000001</code>, which is $(2^{100}-1)^2 = 2^{200} - 2^{101} + 1$.</p>
+<div class="callout trap"><p><b>Signed vectors</b> need two extra steps: sign-extend bit $N-1$ into the unused bits before reading the buffer as signed, and decide what the model does when the mathematical result does not fit $N$ bits. SV wraps; Python never does. Exercise E10 does it for <code>bit signed [99:0]</code>, where $-(-2^{99})$ is the trap.</p></div>
+
+<!-- 0.8 -->
+<h3 id="r-errors"><span class="no">0.8</span>Errors into the scoreboard</h3>
+<p>A Python exception inside a DPI call must never escape as a crash or, worse, as a plausible-looking return value. The C API reports failures in two ways and the bridge must check both: a <code>NULL</code> result from a call, and an error <i>indicator</i> with a valid-looking result from a conversion (<code>PyLong_AsLong</code> and friends return <code>-1</code> and set the indicator on overflow). The lab's first version returned that <code>-1</code> to SV: <code>LOG overflow value=-1</code>. Now every wrapper zeroes the result on error.</p>
+<p><code>fail()</code> turns the pending exception into a one-line message (<code>PyErr_GetRaisedException</code>, Python 3.12+). Step 06's contract has no error call, because a C model has nothing to report: it cannot raise. So the bridge does two things with the message. It <b>prints it at once</b> on stderr (<code>golden_py: fails: KeyError: 0</code>), and the wrapper returns 0, which the scoreboard then sees as a mismatch: loud, never silent, and no change to a testbench that also runs on C. It also <b>keeps it</b> for <code>py_last_error()</code> in <code>py_extra_pkg.sv</code>, which returns the message and clears it: a <b>pull</b> model for Python-only testbenches that want the text in their own log. Step 07 shows the <b>push</b> alternative, a <code>context</code> import that calls an exported SV function to report; pull keeps every import non-<code>context</code>, push reports even when the caller forgets to ask.</p>
+<pre class="sv"><code><span class="c">// tb_err.sv: imports golden_pkg (the contract) and py_extra_pkg (Python-only)</span>
+<span class="k">function automatic void</span> show(<span class="k">string</span> tag, <span class="k">longint</span> v);
+  $display("LOG %s value=%0d err=%s", tag, v, py_last_error());
+<span class="k">endfunction</span>
+show("raises", py_call_i64("golden", "fails", none));    <span class="c">// value=0 err=fails: KeyError: 0</span></code></pre>
+<p><code>tb_err.sv</code> provokes each failure class and prints what reaches SV:</p>
+<div class="tbl"><table>
+<tr><th>cause</th><th class="num">value</th><th>py_last_error()</th></tr>
+<tr><td>module not on <code>sys.path</code></td><td class="num">0</td><td class="mono">no_such_module.f: ModuleNotFoundError: No module named 'no_such_module'</td></tr>
+<tr><td>function name typo</td><td class="num">0</td><td class="mono">golden.nope: AttributeError: module 'golden' has no attribute 'nope'</td></tr>
+<tr><td>model raises</td><td class="num">0</td><td class="mono">fails: KeyError: 0</td></tr>
+<tr><td>result does not fit <code>longint</code></td><td class="num">0</td><td class="mono">big: OverflowError: int too big to convert</td></tr>
+<tr><td>model kept the memoryview (0.9)</td><td class="num">0</td><td class="mono">Fir8.block x: model kept a reference to a simulator buffer</td></tr>
+</table></div>
+
+<div class="callout note" style="--c-label:'In Verilator'"><p><code>$error</code> <b>stops the simulation</b>: the log shows <code>%Error: tb_err.sv:44: Assertion failed in top: scoreboard: 6 model errors</code>, then <code>Verilog $stop</code>, and the process exits with status 1. Code after it does not run. With <code>+verilator+error+limit+10</code> the same run prints <code>Verilog $stop, ignored due to +verilator+error+limit</code> and continues. Commercial simulators continue after <code>$error</code> by default. Portable scoreboards count errors, print a summary, and decide at the end.</p></div>
+
+<!-- 0.9 -->
+<h3 id="r-lifetime"><span class="no">0.9</span>Buffer lifetime: the contract Python cannot see</h3>
+<p>A memoryview built with <code>PyMemoryView_FromMemory</code> does not own its memory. It is valid only while the simulator keeps the buffer alive, which the LRM guarantees only <b>for the duration of the call</b>. If the model keeps a reference and uses it later, it reads whatever the simulator has there by then: for an input fixed array, live SV storage; for an output array, a dead stack frame (Fig. 5).</p>
+<p>The bridge does what it can. After the call, a reference count above 1 on the memoryview means the model stored it (<code>self.kept = xin</code>), and the bridge reports it. Then it calls <code>release()</code>, so any later access through that memoryview raises <code>ValueError</code> instead of reading garbage. What it cannot see is a <b>numpy view</b>: <code>np.frombuffer(xin)</code> holds its own internal buffer reference, not the memoryview object. The lab's <code>keep_numpy</code> bug shows the consequence. After the call returns, SV writes <code>xs[0] = 1234</code>, and Python reads it back through the kept view without any DPI call involved: <code>LOG keep_numpy value=0 err=</code> (undetected), then <code>LOG kept0_after_sv_write value=1234</code>.</p>
+<div class="callout hv"><p>Rule for model authors: <b>buffers passed in are borrowed for the call</b>. Compute, write outputs, return. If you need the data later, copy it (<code>bytes(xin)</code>, <code>np.frombuffer(xin, ...).copy()</code>). The same rule holds for the <code>const char*</code> of an SV <code>string</code> argument and for every pointer DPI gives C.</p></div>
+
+<!-- 0.10 -->
+<h3 id="r-bug"><span class="no">0.10</span>Proving the scoreboard can fail</h3>
+<p>A scoreboard that has never failed has not been tested. Bug injection is the backend's business, not the contract's, so the SV does not change: step 06's <code>golden.c</code> rebuilt with <code>-DMUTANT=1</code>, and <code>golden.py</code> started with <code>GOLDEN_BUG=fir_trunc</code> in the environment (same binary), both make the model truncate instead of rounding, a one-LSB difference that only shows on about half the samples. The per-sample scoreboard, the per-block scoreboard and the C backend all report the <b>same</b> first mismatch and the same count:</p>
+<pre class="sv"><code>LOG first_mismatch unit=0 sample=0 dut=-12612 model=-12613
+LOG fir samples=2048 calls=4096 errors=1729 saturated=631
+FAIL</code></pre>
+<p>Three things are proven at once: the comparison is sensitive to one LSB; the per-block scoreboard reports the same absolute sample index as the per-sample one (the index arithmetic <code>n - nb + 1 + i</code> is right); and the Python and C models make the same mistake in the same place, so they share the contract and differ only in implementation.</p>
+<p>The other half of "can it fail" is "did it test anything". Exercise E5 shows a scoreboard that prints <code>PASS</code> after checking zero bytes, because of an SV initializer rule. Always log what was covered (<code>bytes=39480</code>) and assert on it.</p>
+
+<!-- 0.11 -->
+<h3 id="r-cost"><span class="no">0.11</span>What it costs</h3>
+<p><code>tb_perf.sv</code> measures model throughput with no DUT: the same SV calls each backend 100 000 times (or in blocks of 1024), timing with step 06's <code>wall_s()</code> import (<code>clock_gettime</code>). The C backend is step 06's <code>golden.c</code>, whose CRC is table-driven. One run on this machine:</p>
+
+<figure class="fig wide">
+<svg class="dg" viewBox="0 0 760 290" role="img" aria-label="Throughput in items per second on a log scale, one run. C FIR per sample 2.0e8. Python FIR per sample 1.2e6. C FIR block 2.2e8. Python FIR block with numpy 3.0e7. C CRC per byte 3.7e8. Python CRC per byte 3.9e6. C CRC 1 KiB blocks, table-driven, 5.7e8 bytes per second. Python CRC 1 KiB blocks with zlib 1.15e9 bytes per second. Python empty round trip 3.5e6 calls per second. system call spawning python3, 25 calls per second.">
+<g class="grid">
+<line x1="240" y1="14" x2="240" y2="252"/><line x1="330" y1="14" x2="330" y2="252"/><line x1="420" y1="14" x2="420" y2="252"/><line x1="510" y1="14" x2="510" y2="252"/><line x1="600" y1="14" x2="600" y2="252"/><line x1="690" y1="14" x2="690" y2="252"/>
+</g>
+<text class="t mid" x="240" y="270">1</text><text class="t mid" x="330" y="270">10²</text><text class="t mid" x="420" y="270">10⁴</text><text class="t mid" x="510" y="270">10⁶</text><text class="t mid" x="600" y="270">10⁸</text><text class="t mid" x="690" y="270">10¹⁰</text>
+<text class="note" x="240" y="286">items per second (log scale)</text>
+<text class="t end" x="232" y="30">C · FIR per sample</text><rect class="s1" x="240" y="20" width="374" height="14" rx="2"/><text class="t" x="620" y="31">203 M</text>
+<text class="t end" x="232" y="52">Py · FIR per sample</text><rect class="s0" x="240" y="42" width="273" height="14" rx="2"/><text class="t" x="519" y="53">1.2 M</text>
+<text class="t end" x="232" y="74">C · FIR block</text><rect class="s1" x="240" y="64" width="375" height="14" rx="2"/><text class="t" x="621" y="75">218 M</text>
+<text class="t end" x="232" y="96">Py · FIR block (numpy)</text><rect class="s0" x="240" y="86" width="336" height="14" rx="2"/><text class="t" x="582" y="97">30 M</text>
+<text class="t end" x="232" y="118">C · CRC per byte</text><rect class="s1" x="240" y="108" width="386" height="14" rx="2"/><text class="t" x="632" y="119">370 M</text>
+<text class="t end" x="232" y="140">Py · CRC per byte</text><rect class="s0" x="240" y="130" width="297" height="14" rx="2"/><text class="t" x="543" y="141">3.9 M</text>
+<text class="t end" x="232" y="162">C · CRC 1 KiB (table)</text><rect class="s1" x="240" y="152" width="394" height="14" rx="2"/><text class="t" x="640" y="163">571 MB/s</text>
+<text class="t end" x="232" y="184">Py · CRC 1 KiB (zlib)</text><rect class="s0" x="240" y="174" width="408" height="14" rx="2"/><text class="hotx" x="654" y="185">1.15 GB/s</text>
+<text class="t end" x="232" y="206">Py · empty round trip</text><rect class="s2" x="240" y="196" width="295" height="14" rx="2"/><text class="t" x="541" y="207">3.5 M</text>
+<text class="t end" x="232" y="228">$system(python3 …)</text><rect class="s2" x="240" y="218" width="63" height="14" rx="2"/><text class="hotx" x="309" y="229">25 /s</text>
+</svg>
+<figcaption><b>Fig. 7</b>Model throughput, one run (Verilator 5.052, Python 3.14.7, macOS x86_64; check.py asserts the ratios, not the values). Orange: Python backend; teal: C backend; indigo: references.</figcaption>
+</figure>
+
+<p>What to read from it:</p>
+<ul>
+<li><b>The crossing is cheap, the interpreter is not free.</b> An empty Python call through the bridge costs about 0.3 µs (3.5 M calls/s). A per-sample Python FIR call costs about 0.85 µs. The same call into C costs about 5 ns. Per-sample Python models are ~170× slower than C ones.</li>
+<li><b>Batching recovers most of it.</b> The numpy block model runs at 30 M samples/s, 25× the per-sample Python model and within 7× of C.</li>
+<li><b>Python can beat your C.</b> <code>zlib.crc32</code> over 1 KiB blocks runs at 1.15 GB/s, 2× faster than step 06's table-driven C loop (571 MB/s), because zlib is optimized C with wider tables and SIMD. The cost of Python is per <i>call</i>, not per byte.</li>
+<li><b>The first call pays the start-up.</b> Interpreter initialization plus importing numpy took 102 ms (<code>first_call_us=102210</code>). Pay it once, at time 0 (step 07 does it in an explicit <code>py_init</code>).</li>
+<li><b>Spawning a process per call</b> (Spear §12.9, <code>$system</code>) runs at 25 calls/s: ~40 ms each, 140 000× slower than the embedded call.</li>
+</ul>
+<p>To put it in budget terms: if the DUT simulation itself runs at 10 k cycles/s (a mid-size block in Verilator), a per-transaction Python model at ~1 µs per call adds about 1 % to the wall time. Python per sample only hurts when the DUT is tiny and fast, as in these labs, or when the model call happens on every clock of a long regression. Exercise E8 does the arithmetic.</p>
+
+<!-- 0.12 -->
+<h3 id="r-generic"><span class="no">0.12</span>A generic bridge</h3>
+<p>The typed wrappers above need C code per model function. For quick experiments a generic entry point helps: name the module and function as strings, pass integers, get an integer back. The callable is looked up once and cached in a dict keyed <code>"module.func"</code>.</p>
+<pre class="cc"><code><span class="k">long long</span> py_call_i64(<span class="k">const char</span>* mod, <span class="k">const char</span>* func, <span class="k">const</span> svOpenArrayHandle args) {
+  PyObject* f = callable(mod, func);                     <span class="c">/* cached after the first lookup */</span>
+  <span class="k">if</span> (!f) <span class="k">return</span> 0;
+  <span class="k">int</span> n = svSize(args, 1);
+  <span class="k">const long long</span>* a = (<span class="k">const long long</span>*)svGetArrayPtr(args);
+  PyObject* t = PyTuple_New(n);
+  <span class="k">for</span> (<span class="k">int</span> i = 0; i &lt; n; i++) PyTuple_SET_ITEM(t, i, PyLong_FromLongLong(a[i]));   <span class="c">/* steals */</span>
+  PyObject* r = PyObject_Call(f, t, NULL);
+  Py_DECREF(t);
+  <span class="k">long long</span> v = r ? PyLong_AsLongLong(r) : 0;
+  <span class="k">if</span> (!r || PyErr_Occurred()) { fail(func); v = 0; }
+  Py_XDECREF(r);
+  <span class="k">return</span> v;
+}</code></pre>
+<pre class="sv"><code><span class="k">import</span> "DPI-C" <span class="k">function longint</span> py_call_i64(<span class="k">input string</span> mod, <span class="k">input string</span> func, <span class="k">input longint</span> args[]);
+<span class="k">longint</span> two[2] = '{40, 2};
+$display("%0d", py_call_i64("operator", "add", two));   <span class="c">// 42: any importable function, no glue</span>
+$display("%0d", py_call_i64("math", "gcd", two));       <span class="c">// 2</span></code></pre>
+<p>Two Verilator constraints shape it: an open-array actual must be a fixed array variable (no <code>'{...}</code> literal, no dynamic array), and SV has no zero-length fixed array. So a call with no arguments passes a one-element dummy (<code>longint none[1]</code>), and functions meant for the generic bridge accept <code>*_</code>. Forgetting that is a <code>TypeError</code> that the bridge reports, and if the caller does not read <code>py_last_error()</code>, a 0 that only the stderr line explains: it happened twice while writing the exercises.</p>
+<div class="tbl"><table>
+<tr><th></th><th>typed wrapper (<code>fir8_step</code>)</th><th>generic (<code>py_call_i64</code>)</th></tr>
+<tr><td>C per model function</td><td>yes, ~15 lines</td><td>none</td></tr>
+<tr><td>types</td><td>exact (shortint, bit [199:0], arrays)</td><td>int64 in, int64 out</td></tr>
+<tr><td>prototype check</td><td>compiler, via <code>Vtop__Dpi.h</code></td><td>at run time, by Python (<code>TypeError</code>)</td></tr>
+<tr><td>swappable for a C model</td><td>yes (0.1)</td><td>no: the call names Python</td></tr>
+<tr><td>use for</td><td>the scoreboard's model</td><td>exploration, small utilities, one-off checks</td></tr>
+</table></div>
+
+<!-- 0.13 -->
+<h3 id="r-beyond"><span class="no">0.13</span>Beyond hand-written glue</h3>
+<p>Everything in this step is ~250 lines of C you now understand line by line. That understanding is what lets you judge the libraries that generate such glue for you. In M. Ballance's taxonomy (<i>Properly Introducing Python to your UVM Testbench</i>, DVCon US 2026), there are two ways to put Python in a verification environment:</p>
+<div class="tbl"><table>
+<tr><th>approach</th><th>example</th><th>ease of integration</th><th>reuse of SV/UVM</th></tr>
+<tr><td><b>signal level</b>: Python drives and samples DUT signals through VPI/VHPI</td><td>cocotb, pyuvm</td><td>high</td><td>low</td></tr>
+<tr><td><b>function wrapper</b>: generated Python/SV API over DPI</td><td>PyHDL-IF, pysv, pybind, this tutorial</td><td>low</td><td>high</td></tr>
+</table></div>
+<p>This tutorial is the function-wrapper approach done by hand. The options, as of October 2026:</p>
+<div class="tbl"><table>
+<tr><th>tool</th><th>how</th><th>fits when</th><th>watch out</th></tr>
+<tr><td><b>hand-written bridge</b> (this step)</td><td>CPython C API behind a C-typed DPI contract</td><td>a few model entry points, wide/array types you control, C and Python backends side by side</td><td>you own refcounts, errors and buffer lifetime</td></tr>
+<tr><td><a href="https://github.com/Kuree/pysv">pysv</a> 0.4.0 (May 2026)</td><td><code>@sv()</code> on Python functions/classes; generates the SV package (classes wrap a chandle) and a pybind11 shared library</td><td>many small functions, Python classes as SV classes, little C knowledge on the team</td><td>re-parses the function source on every call (per its docs), so per-sample calls are slow; build-time absolute <code>sys.path</code></td></tr>
+<tr><td><a href="https://github.com/fvutils/pyhdl-if">PyHDL-IF</a> 0.2.1 (Aug 2026)</td><td><code>@hif.api</code>/<code>@hif.imp</code>; SV structs from <code>ctypes.Structure</code>; async methods become time-consuming tasks; UVM proxies; pytest launched from SV</td><td>UVM environments where Python writes sequences/scoreboards and SV keeps the agents; Questa, Xcelium, VCS, Verilator</td><td>binary wheels only for Linux x86_64 (build from source elsewhere); young API</td></tr>
+<tr><td><a href="https://www.cocotb.org">cocotb</a> 2.1 / <a href="https://github.com/pyuvm/pyuvm">pyuvm</a> 5.0</td><td>the whole testbench is Python (asyncio-style coroutines) over VPI; the golden model is just a Python call, no DPI</td><td>new block-level testbenches, especially on Verilator (5.036+ with <code>--timing</code>) and Icarus</td><td>cannot reuse existing SV/UVM agents; VPI signal access is slower than compiled SV</td></tr>
+</table></div>
+<div class="callout hv"><p>The choice follows the testbench, not the model. If the testbench is SV/UVM and stays SV/UVM, use a function wrapper (hand-written for a handful of models, PyHDL-IF when Python should drive UVM). If you are writing a new block testbench from scratch and the team prefers Python, write the testbench in cocotb and the "golden model" stops being a DPI problem at all.</p></div>
+
+<!-- 0.14 -->
+<h3 id="r-recipe"><span class="no">0.14</span>Recipe: a Python golden model over DPI</h3>
+<ol>
+<li>Write the imports in a package, with C types, as if the model were C. Implement a C backend if at all possible; keep both linkable.</li>
+<li>Include <code>V&lt;top&gt;__Dpi.h</code> in every bridge file. Cache callables; intern method names used per sample.</li>
+<li>Arrays: fixed SV arrays plus a length; <code>svGetArrayPtr</code> into a memoryview; numpy <code>frombuffer</code> on it. Outputs written in place through a writable memoryview.</li>
+<li>Wide vectors: mask the unused top bits, <code>PyLong_FromUnsignedNativeBytes</code> in, <code>PyLong_AsNativeBytes</code> out with a fit check. Signed: sign-extend first, and make the model wrap like SV.</li>
+<li>Stateful models: one Python object per DUT instance behind a chandle that owns one reference; free before <code>Py_FinalizeEx</code>; count live objects.</li>
+<li>Errors: check <code>NULL</code> <i>and</i> <code>PyErr_Occurred()</code>; return a neutral value; surface the message (pull or push) and never compare a failed model result.</li>
+<li>Bit-exact arithmetic in integers only; document the rounding and saturation in the DUT header and transcribe it.</li>
+<li>Per-sample models in plain Python, block models in numpy; compare per transaction while debugging, per block in regression.</li>
+<li>Inject a model bug and see the scoreboard fail; log what was covered and assert it.</li>
+</ol>
+
+<h2 id="s1"><span class="no">§1 · Objectives</span>What you can do after this step</h2>
+<ul>
+<li>Design a DPI model contract in C types that a C and a Python backend both implement, and select the backend at link time.</li>
+<li>Use a Python library function (<code>zlib.crc32</code>) as a bit-exact reference, including its chaining semantics.</li>
+<li>Hold one Python object per DUT instance behind a <code>chandle</code> with correct reference ownership, and prove it.</li>
+<li>Transcribe fixed-point rounding and saturation into integer Python/numpy that matches SV bit for bit.</li>
+<li>Pass arrays into and out of Python without copies, and state exactly how long those buffers are valid.</li>
+<li>Convert <code>svBitVecVal</code> vectors of any width to and from Python <code>int</code>, unsigned and signed, with overflow detection.</li>
+<li>Route every Python failure into the scoreboard, and know what <code>$error</code> does in Verilator.</li>
+<li>Estimate the per-call cost and choose between per-sample, per-block, C, or a framework (pysv, PyHDL-IF, cocotb).</li>
+</ul>
+<p>Prerequisites: open arrays and <code>svGetArrayPtr</code> (<a href="../04_arrays_structs_strings/guide.html">step 04</a>), chandle lifetimes (<a href="../03_state_and_handles/guide.html">step 03</a>), the scoreboard pattern (<a href="../06_golden_model_c/guide.html">step 06</a>), CPython init/refcounts/errors (<a href="../07_embedding_python/guide.html">step 07</a>).</p>
+
+<h2 id="s2"><span class="no">§2 · Exercises</span>11 graded exercises, with solutions</h2>
+<p>★ basic · ★★ intermediate · ★★★ real-world. Code solutions live in <code>lab/ex/</code> (or the lab root) and are built, run and asserted by <code>check.py</code>.</p>
+
+<div class="q">
+<p><span class="n">E1 ★</span>Predict. <code>golden.crc32_update(crc, chunk)</code>, the function behind <code>crc32_msg</code> and <code>Crc32.update</code>, is chained as <code>crc = crc32_update(crc, chunk)</code> across three chunks <code>b"12"</code>, <code>b"345"</code>, <code>b"6789"</code>, starting from <code>crc = 0</code>. What is <code>crc</code> at the end, and what would it be if the chain started from <code>0xFFFFFFFF</code> "because that is the CRC initial value"?</p>
+<details><summary>Show solution</summary><div class="a">
+<p><code>0xCBF43926</code>, the CRC of <code>"123456789"</code>: <code>zlib.crc32(b, zlib.crc32(a)) == zlib.crc32(a + b)</code> (check.py asserts the two-chunk version). The running value is the <i>final</i> CRC so far (register inverted), and the empty message's CRC is 0, so 0 is the correct start. <code>0xFFFFFFFF</code> is the initial value of the <i>register</i>; passing it as the running CRC means "continue a message whose CRC is <code>0xFFFFFFFF</code>", which zlib turns back into register value 0: a different, wrong answer. A C implementation keeps the other convention: step 06's <code>golden.c</code> stores the <i>register</i> (starting at <code>0xFFFFFFFF</code>) and inverts only on output. Mixing the two conventions is the trap.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E2 ★</span><b>Ex. 12.1 (book), Python edition.</b> Make <code>shift(i, n)</code> a Python golden model: shift a 32-bit unsigned <code>i</code> left by <code>n</code> if <code>n &gt; 0</code>, right by <code>-n</code> if negative. Call it through <code>py_call_i64</code> and compare with SV's own shift on 200 random cases, including <code>|n| ≥ 32</code>.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="py"><code><span class="c"># lab/ex/ex_models.py</span>
+M32 = (1 &lt;&lt; 32) - 1
+<span class="k">def</span> shift(i, n):
+    <span class="k">return</span> (i &lt;&lt; n) &amp; M32 <span class="k">if</span> n &gt;= 0 <span class="k">else</span> (i &amp; M32) &gt;&gt; -n</code></pre>
+<pre class="sv"><code><span class="c">// lab/ex/ex_shift.sv (loop body)</span>
+i = $urandom; n = $urandom_range(0, 70) - 35;
+a = '{longint'(i), longint'(n)};                         <span class="c">// a: longint a[2] (a variable, not a literal actual)</span>
+got = 32'(py_call_i64("ex_models", "shift", a));
+exp_v = (n &gt;= 0) ? i &lt;&lt; n : i &gt;&gt; -n;                      <span class="c">// SV: shift by &gt;= width gives 0</span></code></pre>
+<p>Result: <code>LOG ex_shift n=200 errors=0</code>. Compare with the C version in step 01: Python needs the <code>&amp; M32</code> because its ints never overflow, while C needs a guard for <code>n ≥ 32</code> because that shift is undefined behavior. Each language has its own way of not being SV.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E3 ★</span>Find the bugs. A colleague's bridge function passes all tests:</p>
+<pre class="cc"><code><span class="k">int</span> py_square(<span class="k">int</span> x) {
+  <span class="k">return</span> PyLong_AsLong(PyObject_CallFunction(f_square, "i", x));
+}</code></pre>
+<details><summary>Show solution</summary><div class="a">
+<p>Three bugs. (1) The result object is never released: one leaked <code>int</code> per call. Tests with small values do not show it, because ints in −5…256 are cached (and immortal since Python 3.12), so the "leak" is a no-op for them; with large values the process grows forever. (2) If the call raises, <code>PyObject_CallFunction</code> returns <code>NULL</code> and <code>PyLong_AsLong(NULL)</code> sets a <code>SystemError</code> and returns −1: the scoreboard receives −1 as if it were the model's answer. (3) A result outside <code>int</code> range returns −1 with <code>OverflowError</code> set, also silently. The fix is the pattern of 0.2: keep <code>r</code>, check <code>NULL</code> and <code>PyErr_Occurred()</code>, report, return a neutral value, <code>Py_XDECREF(r)</code>.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E4 ★★</span>Predict, for Verilator 5.052. The import is <code>crc32_msg(input byte unsigned msg[], input int len)</code>. Which actuals for <code>msg</code> build? (a) <code>byte unsigned f[5]</code>; (b) <code>byte unsigned d[]</code> (dynamic); (c) <code>byte unsigned q[$]</code>; (d) the literal <code>'{8'h31, 8'h32}</code>.</p>
+<details><summary>Show solution</summary><div class="a">
+<p>Only (a). (b) and (c) fail at build time: <code>Unsupported: DPI argument of type DYNARRAYDTYPE</code> (<code>tb_dyn_fail.sv</code>, asserted), or, with the import inside the module, <code>Passing dynamic array or queue as actual argument to DPI open array is not yet supported</code>. (d) fails with <code>Unsupported: Assignment pattern applies against non-struct/union data type: 'UNSIZEDARRAYDTYPE'</code> (seen in <code>ex_shiftreg.sv</code> before the fix). The LRM allows all four; commercial simulators accept them. Portable rule: fixed array variable + explicit length.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E5 ★★</span>Find the bug. This scoreboard prints <code>PASS</code> with 0 errors, and the CRC check value line prints <code>check_value=00000000</code>. What is wrong?</p>
+<pre class="sv"><code><span class="k">initial begin</span>
+  ...
+  <span class="k">for</span> (<span class="k">int</span> m = 0; m &lt; 300; m++) <span class="k">begin</span>
+    <span class="k">int</span> len = (m == 0) ? 0 : (m == 1) ? 9 : $urandom_range(1, 256);
+    clear = 1; @(negedge clk); clear = 0;
+    exp_crc = 0;
+    <span class="k">for</span> (<span class="k">int</span> i = 0; i &lt; len; i++) <span class="k">begin</span> ... <span class="k">end</span>
+    exp_crc = crc32_msg(msg, len); check(...);
+  <span class="k">end</span></code></pre>
+<details><summary>Show solution</summary><div class="a">
+<p><code>len</code> is declared inside a block of an <code>initial</code> process, so it is a <b>static</b> variable, and a static variable's initializer runs once, at time zero, not on every loop iteration. At time zero <code>m</code> is not even set yet; <code>len</code> is 0 forever. Every message is empty, the DUT's CRC after <code>clear</code> is 0, the model's CRC of nothing is 0: 300 perfect matches on zero bytes. The lab reproduces it (<code>+define+STATIC_BUG</code>): <code>LOG crc msgs=300 bytes=0 calls=300 checks=300 errors=0</code>, <code>PASS</code>. Verilator gives no warning. Fix: <code>automatic int len = ...</code> (or declare, then assign). The meta-lesson: log what was covered (<code>bytes=</code>) and assert on it, not only on <code>errors=0</code>.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E6 ★★</span>Find the bug. The coefficients live in <code>logic signed [15:0] c[8]</code>, because that is the DUT port type. <code>h = fir8_new(c);</code> does not build. Why, and what are the two fixes? Then: can the TB instead declare <code>shortint coef[8]</code> and connect it to the DUT's <code>coef</code> port?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>An unpacked array passed to an unpacked array formal must have equivalent element types. <code>logic signed [15:0]</code> is 4-state, <code>shortint</code> is 2-state: Verilator says <code>Shape of the argument does not match the shape of the parameter ('logic[15:0]' v.s. 'shortint')</code> (<code>tb_shape_fail.sv</code>). Fixes: copy into a <code>shortint</code> array before the call (<code>tb_fir.sv</code> declares <code>shortint coef[2][8]</code> and connects that to the DUT); or change the import to <code>input logic signed [15:0] coef[8]</code> and handle <code>svLogicVecVal</code> in C (step 02). The reverse direction fails too: a <code>shortint</code> array on a <code>logic signed [15:0]</code> array <b>port</b> is <code>Array element types are not equivalent (IEEE 1800-2023 6.22.2)</code> (<code>tb_port_fail.sv</code>).</p>
+<p>A Verilator inconsistency to know about: <code>tb_fir.sv</code> connects a <code>shortint</code> sub-array <code>coef[u]</code> to <code>fir8.coef</code> and builds, while <code>tb_port_fail.sv</code>, connecting a whole <code>shortint coef[8]</code> through <code>.*</code>, does not. That inconsistency is Verilator's; by the LRM both are illegal (6.22.2 requires equivalent element types for unpacked array port connections). Do not rely on it: keep TB arrays in the DUT's type and convert at the DPI call.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E7 ★★</span>Write. Ethernet appends the CRC (the FCS) to the frame, least significant byte first. A receiver runs the same CRC over payload + FCS. Show, with the DUT and the model, that the result is the same constant for every frame, and find that constant.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">// lab/ex/ex_crc_frames.sv (loop body)</span>
+<span class="k">automatic int</span> len = $urandom_range(46, 1500);
+<span class="k">foreach</span> (frame[i]) frame[i] = 8'($urandom);
+fcs = crc32_msg(frame, len);
+<span class="k">for</span> (<span class="k">int</span> k = 0; k &lt; 4; k++) frame[len + k] = fcs[8*k +: 8];   <span class="c">// LSB first</span>
+<span class="c">// clear, stream len+4 bytes into the DUT ...</span>
+model = crc32_msg(frame, len + 4);
+<span class="k">if</span> (crc !== 32'h2144DF1C || model !== 32'h2144DF1C) n_err++;</code></pre>
+<p>20 frames of 46–1500 bytes: <code>LOG ex_crc_frames frames=20 residue=2144df1c errors=0</code>. The residue <code>0x2144DF1C</code> is the CRC-32 "magic check" value; receivers compare against it instead of recomputing and comparing the FCS. The exercise also shows a model doing double duty: generator (FCS) and checker.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E8 ★★</span>Budget. A regression streams 10 M accepted samples through each of the two FIR instances, and the Verilator model of the DUT plus TB runs at ~2 M cycles/s with <code>in_valid</code> high 80 % of the time. Using the throughputs in Fig. 7, estimate the wall time added by (a) the per-sample Python model, (b) the 256-sample block Python model, (c) the per-sample C model.</p>
+<details><summary>Show solution</summary><div class="a">
+<p>DUT simulation: 10 M samples / 0.8 = 12.5 M cycles at 2 M cycles/s ≈ 6.3 s. Model calls: 2 × 10 M = 20 M samples. (a) 20 M / 1.2 M per s ≈ 17 s: the model costs almost three times the simulation. (b) 20 M / 30 M per s ≈ 0.7 s, about +11 %. (c) 20 M / 203 M per s ≈ 0.1 s, +1.6 %. Per-sample Python is fine for debug runs and short tests; for the regression, batch (or keep the C model and run the Python one nightly as a cross-check of the C one).</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E9 ★★★</span><b>Ex. 12.2–12.6 (book), Python edition.</b> A 32-bit shift register with a load flag (Ex. 12.2), several independent instances (12.3), a call counter shared by all instances (12.4), an initial value at construction (12.5), encapsulated in a class (12.6). Implement it as a Python class, and extend the bridge with three generic functions so that <i>any</i> Python class can live behind a chandle: <code>py_new(mod, cls, args[])</code>, <code>py_call_method_i64(obj, method, args[])</code>, <code>py_free(obj)</code>.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="py"><code><span class="c"># lab/ex/ex_models.py</span>
+<span class="k">class</span> Shift:
+    calls = 0                                  <span class="c"># Ex. 12.4: class attribute, shared</span>
+    <span class="k">def</span> __init__(self, init=0):
+        self.reg = init &amp; M32                  <span class="c"># Ex. 12.5</span>
+    <span class="k">def</span> shift(self, i, n, ld):
+        Shift.calls += 1
+        self.reg = shift(i <span class="k">if</span> ld <span class="k">else</span> self.reg, n)
+        <span class="k">return</span> self.reg
+    <span class="k">def</span> total_calls(self, *_):                 <span class="c"># *_: the bridge always passes &gt;= 1 arg</span>
+        <span class="k">return</span> Shift.calls</code></pre>
+<pre class="cc"><code><span class="c">/* lab/ex/golden_ex.c (includes ../golden_py.c for callable() and fail()) */</span>
+<span class="k">void</span>* py_new(<span class="k">const char</span>* mod, <span class="k">const char</span>* cls, <span class="k">const</span> svOpenArrayHandle args) {
+  PyObject* c = callable(mod, cls);
+  <span class="k">if</span> (!c) <span class="k">return</span> NULL;
+  PyObject* t = args_tuple(args);
+  PyObject* obj = PyObject_Call(c, t, NULL);           <span class="c">/* the chandle's one reference */</span>
+  Py_DECREF(t);
+  <span class="k">if</span> (!obj) fail(cls);
+  <span class="k">return</span> obj;
+}
+<span class="k">long long</span> py_call_method_i64(<span class="k">void</span>* obj, <span class="k">const char</span>* method, <span class="k">const</span> svOpenArrayHandle args);
+<span class="k">void</span> py_free(<span class="k">void</span>* obj) { Py_XDECREF((PyObject*)obj); }</code></pre>
+<p>Output: <code>s1_load=00000010</code> (load 1, shift 4), <code>s1_shift=00000100</code>, <code>s2_shift=40000000</code> (init <code>0x80000001</code> &gt;&gt; 1), <code>s2_shift2=80000000</code>, <code>total_calls=4</code>. The first run printed <code>total_calls=0</code>: <code>total_calls(self)</code> raised <code>TypeError</code> on the dummy argument, the bridge returned 0, and the TB did not read <code>py_last_error()</code>. It does now.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E10 ★★★</span>Write. A model takes and returns <code>bit signed [99:0]</code> and computes the negation. Write the C conversion (both directions) and the Python model so that the result equals SV's <code>-a</code> for every input, including $-2^{99}$.</p>
+<details><summary>Show solution</summary><div class="a">
+<p>In: mask, then sign-extend bit 99 into the 28 unused bits of word 3, and read the 16 bytes as a <i>signed</i> buffer. Out: write signed into 16 bytes and check that bits 127…99 are all equal (the value fits in 100 signed bits); then clean the unused bits. Python: $-(-2^{99}) = 2^{99}$ does not fit 100 signed bits; SV wraps it to $-2^{99}$, so the model must wrap too.</p>
+<pre class="cc"><code>w[3] = (w[3] &amp; 0x8) ? (w[3] | 0xFFFFFFF0u) : (w[3] &amp; 0xF);       <span class="c">/* sign-extend bit 99 */</span>
+PyObject* f  = callable("ex_models", "neg100");       <span class="c">/* FIRST: it initializes Python */</span>
+PyObject* pa = f ? PyLong_FromNativeBytes(w, 16, Py_ASNATIVEBYTES_LITTLE_ENDIAN) : NULL;
+...
+Py_ssize_t need = PyLong_AsNativeBytes(r, y, 16, Py_ASNATIVEBYTES_LITTLE_ENDIAN);
+<span class="k">if</span> (need &lt; 0) fail("neg100");
+<span class="k">else if</span> (need &gt; 16 || ((y[3] &gt;&gt; 3) != 0 &amp;&amp; (y[3] &gt;&gt; 3) != 0x1FFFFFFFu)) <span class="c">/* report overflow */</span>;
+y[3] &amp;= 0xF;</code></pre>
+<pre class="py"><code><span class="k">def</span> wrap(v, bits):                             <span class="c"># two's-complement wrap, like SV</span>
+    <span class="k">return</span> ((v + (1 &lt;&lt; (bits - 1))) % (1 &lt;&lt; bits)) - (1 &lt;&lt; (bits - 1))
+<span class="k">def</span> neg100(a):
+    <span class="k">return</span> wrap(-a, 100)</code></pre>
+<p><code>LOG signed min_neg=8000000000000000000000000</code> and <code>errors=0</code> on 500 vectors. The first version called <code>PyLong_FromNativeBytes</code> before <code>callable()</code>: on the first call the interpreter was not initialized yet and the simulator died with a segmentation fault. Any C API call before <code>Py_Initialize</code> is undefined behavior; route every entry point through the function that initializes.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E11 ★★★</span>Write. The DUT gets an asynchronous reset in the middle of the stream (sample 300 of 600). Make the model follow, without touching <code>golden.py</code> or <code>golden_py.c</code>, and show what the scoreboard sees if the model is not reset.</p>
+<details><summary>Show solution</summary><div class="a">
+<p>Subclass the model with a <code>reset()</code> and create it through the generic <code>py_new()</code> of E9; the contract's <code>fir8_step()</code> works on it unchanged, because the chandle is just a <code>PyObject*</code> with a <code>step</code> method.</p>
+<pre class="py"><code><span class="k">class</span> Fir8R(golden.Fir8):
+    <span class="k">def</span> __init__(self, *coef):                  <span class="c"># 8 scalar args: what py_new can pass</span>
+        super().__init__(coef)
+    <span class="k">def</span> reset(self, *_):
+        self.h = [0] * 7
+        <span class="k">return</span> 0</code></pre>
+<pre class="sv"><code><span class="k">if</span> (n == 300) <span class="k">begin</span>
+  rst_n = 0; @(negedge clk); rst_n = 1;
+  <span class="k">void</span>'(py_call_method_i64(h, "reset", none));
+  <span class="k">if</span> (py_last_error() != "") n_err++;               <span class="c">// never ignore it</span>
+<span class="k">end</span></code></pre>
+<p>With the reset: <code>errors=0</code>. Without it (<code>+no_model_reset</code>): <code>errors=7</code>, exactly the 7 samples during which the model's history still holds pre-reset data. A short burst of mismatches right after a reset is the signature of a model that does not see reset.</p>
+</div></details>
+</div>
+
+<h2 id="s3"><span class="no">§3 · Quiz</span>14 questions, self-grading</h2>
+<p>Pick an answer and press <b>Check</b>. The explanation covers the right answer and the tempting wrong one.</p>
+<p class="quiz-score"></p>
+
+<div class="quiz" data-answer="b">
+<p class="qq">1. Why does the shared <code>golden_pkg.sv</code> declare <code>crc32_msg(input byte unsigned msg[], input int len)</code> instead of <code>py_call(input string expr)</code>?</p>
+<label><input type="radio" value="a"> Because DPI cannot pass strings to C.</label>
+<label><input type="radio" value="b"> So that a C (or any other) implementation can be linked instead, with type checking by the compiler.</label>
+<label><input type="radio" value="c"> Because Python cannot evaluate expressions passed from C.</label>
+<label><input type="radio" value="d"> Because Verilator rejects string arguments in imports.</label>
+<div class="why">(b) A C-typed contract is language-neutral: step 06's <code>golden.c</code> implements the same symbols and the prototype header catches drift. (a) and (d) are false: <code>input string</code> maps to <code>const char*</code> and the generic bridge uses it. (c) is false too (<code>PyRun_String</code> exists), it is just a bad contract.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">2. The running CRC after the bytes <code>a</code> is <code>c = zlib.crc32(a)</code>. Which call gives the CRC of <code>a + b</code>?</p>
+<label><input type="radio" value="a"> <code>zlib.crc32(b, ~c &amp; 0xFFFFFFFF)</code></label>
+<label><input type="radio" value="b"> <code>zlib.crc32(b) ^ c</code></label>
+<label><input type="radio" value="c"> <code>zlib.crc32(b, c)</code></label>
+<label><input type="radio" value="d"> <code>zlib.crc32(a + b, c)</code></label>
+<div class="why">(c) zlib's second argument is the previous <i>final</i> CRC; it undoes the final XOR internally. (a) undoes the final XOR by hand, which zlib already does internally, so it double-inverts. (b) is not how CRCs combine (it ignores the shift of <code>a</code>'s contribution by <code>len(b)</code> bytes). (d) counts <code>a</code> twice.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">3. <code>fir8_new</code> returns the result of <code>PyObject_CallOneArg(cls, c)</code> as the chandle. What must <code>fir8_free</code> do?</p>
+<label><input type="radio" value="a"> <code>Py_XDECREF</code> it once.</label>
+<label><input type="radio" value="b"> Nothing: Python's garbage collector frees it when SV drops the chandle.</label>
+<label><input type="radio" value="c"> <code>Py_DECREF</code> it twice, once for the call and once for the chandle.</label>
+<label><input type="radio" value="d"> <code>free()</code> it.</label>
+<div class="why">(a) The call returned a new (owned) reference; storing it in the chandle transfers that ownership to SV, and freeing drops it. (b) Python cannot see SV's chandle variables; nothing ever drops the reference: a leak. (c) is a double free: there was only one reference. (d) frees memory Python owns with the wrong allocator.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+<p class="qq">4. The FIR model must reproduce <code>(acc + 2**14) &gt;&gt;&gt; 15</code> for a signed 35-bit <code>acc</code>. Which Python expression is bit-exact for all values?</p>
+<label><input type="radio" value="a"> <code>round(acc / 2**15)</code></label>
+<label><input type="radio" value="b"> <code>int((acc + 2**14) / 2**15)</code></label>
+<label><input type="radio" value="c"> <code>math.floor(acc / 2**15 + 0.5)</code></label>
+<label><input type="radio" value="d"> <code>(acc + (1 &lt;&lt; 14)) &gt;&gt; 15</code></label>
+<div class="why">(d) Integer <code>&gt;&gt;</code> floors, like SV's arithmetic shift of a signed value. (a) <code>round</code> is round-half-to-even: different on exact halves. (b) <code>int()</code> truncates toward zero: wrong for negative values. (c) works here only because a 35-bit value fits a double exactly; it is the habit that breaks at 54 bits.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">5. Per sample, why is the plain-int <code>step()</code> ~40× faster than the <code>np.dot</code>/<code>np.roll</code> version?</p>
+<label><input type="radio" value="a"> numpy uses floating point internally.</label>
+<label><input type="radio" value="b"> Each numpy call has a fixed overhead of about a microsecond, larger than eight multiply-adds in the interpreter.</label>
+<label><input type="radio" value="c"> numpy releases the GIL on every call.</label>
+<label><input type="radio" value="d"> The DPI crossing is slower for numpy arrays.</label>
+<div class="why">(b) numpy amortizes its per-call cost over many elements; with 8 elements there is nothing to amortize. (a) is false for int64 arrays. (c) is irrelevant here (one thread). (d) cannot be: both versions are measured by check.py without DPI at all (1.16 M/s vs 29 k/s).</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">6. In Verilator 5.052, <code>svGetArrayPtr(y)</code> for an <b>output</b> open array <code>y</code> returns…</p>
+<label><input type="radio" value="a"> the address of the SV variable passed as the actual.</label>
+<label><input type="radio" value="b"> <code>NULL</code>, because outputs are not in standard layout.</label>
+<label><input type="radio" value="c"> the address of a temporary that is copied into the SV variable after the call.</label>
+<label><input type="radio" value="d"> a pointer into Python's heap.</label>
+<div class="why">(c) Measured: the address differs on every call and is on the C stack; the value reaches SV after the call returns. (a) is what Verilator does for an <i>input</i> fixed array. Either way, the LRM only promises validity during the call, which is why the model must not keep it.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">7. A model does <code>self.kept = np.frombuffer(xin, np.int16)</code> inside <code>block()</code>. What does the bridge's refcount check report?</p>
+<label><input type="radio" value="a"> "model kept a reference to a simulator buffer", because numpy holds the memoryview.</label>
+<label><input type="radio" value="b"> Nothing: the numpy array references the underlying buffer, not the memoryview object, so the memoryview's refcount is back to 1.</label>
+<label><input type="radio" value="c"> A <code>BufferError</code> from <code>release()</code>.</label>
+<label><input type="radio" value="d"> A segmentation fault on the next call.</label>
+<div class="why">(b) Measured: <code>keep_numpy value=0 err=</code> (empty), and the kept view later reads SV's <code>xs[0] = 1234</code>. The check only catches storing the memoryview itself (a). <code>release()</code> succeeds (c). (d) may happen for an output buffer kept and read later, but not deterministically: that is what makes it dangerous.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">8. Why must <code>bits_to_py</code> mask the top word of a <code>bit [99:0]</code> argument?</p>
+<label><input type="radio" value="a"> The bits above bit 99 in the last 32-bit word are not guaranteed to be zero.</label>
+<label><input type="radio" value="b"> Python ints are limited to 96 bits.</label>
+<label><input type="radio" value="c"> To convert from big-endian to little-endian.</label>
+<label><input type="radio" value="d"> Because Verilator stores 4-state values there.</label>
+<div class="why">(a) Annex H leaves the unused bits of the canonical representation unspecified; an unmasked read can turn a 100-bit value into a 128-bit one. (b) Python ints are unbounded. (c) Masking does not reorder bytes. (d) Verilator is 2-state and <code>bit</code> has no <code>bval</code> anyway.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">9. <code>PyLong_AsLongLong(r)</code> is called on <code>r = 2**70</code>. What does it return, and how do you know it failed?</p>
+<label><input type="radio" value="a"> It returns the low 64 bits; nothing signals the truncation.</label>
+<label><input type="radio" value="b"> It returns <code>NULL</code>.</label>
+<label><input type="radio" value="c"> It returns −1 and sets an <code>OverflowError</code>; check <code>PyErr_Occurred()</code>.</label>
+<label><input type="radio" value="d"> It raises a C++ exception through the simulator.</label>
+<div class="why">(c) The lab's first version forwarded the −1 to SV (<code>LOG overflow value=-1</code>). Because −1 is also a valid result, only the error indicator distinguishes them. (a) is what <code>PyLong_AsUnsignedLongLongMask</code> does on purpose. (b): conversion functions return C values, not objects.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+<p class="qq">10. A scoreboard reports a model failure with <code>$error</code> and wants to keep running to count all failures. On Verilator 5.052 it…</p>
+<label><input type="radio" value="a"> keeps running, as on commercial simulators.</label>
+<label><input type="radio" value="b"> keeps running only if compiled with <code>--assert</code>.</label>
+<label><input type="radio" value="c"> aborts with a C++ exception.</label>
+<label><input type="radio" value="d"> stops at the first <code>$error</code> (<code>Verilog $stop</code>, exit 1) unless run with <code>+verilator+error+limit+N</code>.</label>
+<div class="why">(d) Measured in <code>tb_err</code>: the code after <code>$error</code> does not run without the plusarg, and runs with it. (a) is the LRM default and commercial behavior, which is why the trap exists. The lab builds with <code>--assert</code> and still stops (b).</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">11. With the <code>fir_trunc</code> bug (<code>GOLDEN_BUG=fir_trunc</code>), the per-sample and per-block scoreboards both report <code>first_mismatch sample=0</code> and 1729 errors. What does the <i>equality</i> of the two reports prove?</p>
+<label><input type="radio" value="a"> That the DUT is wrong.</label>
+<label><input type="radio" value="b"> That the block scoreboard maps block positions back to the same absolute sample indices and misses nothing.</label>
+<label><input type="radio" value="c"> That numpy and plain Python round the same way.</label>
+<label><input type="radio" value="d"> Nothing: both use the same model.</label>
+<div class="why">(b) The models differ in failure only by design (truncation); what could differ is the scoreboard bookkeeping, and identical first index and count show it is right. (a) The DUT is the reference here: the model has the injected bug. (c) Both modes truncate under the bug; the point is the bookkeeping. (d) Same model, different comparison code: that is exactly what is being tested.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">12. Which observation from Fig. 7 is most important when deciding between a per-sample Python model and a C model?</p>
+<label><input type="radio" value="a"> The cost is per call (~0.3–1 µs), not per data item; batching or coarser calls remove most of it.</label>
+<label><input type="radio" value="b"> Python is always 200× slower than C.</label>
+<label><input type="radio" value="c"> zlib is faster than C, so Python is faster than C.</label>
+<label><input type="radio" value="d"> The first call costs 100 ms, so Python is only suitable for long tests.</label>
+<div class="why">(a) Per-call overhead dominates: per block, numpy is within 7× of C and zlib beats the C table loop by 2×. (b) holds only per call with a tiny model. (c) over-generalizes one library. (d) is a one-time cost, paid at time 0.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">13. A model function written for the generic bridge is declared <code>def total_calls(self):</code> and called with <code>longint none[1]</code>. What does SV get?</p>
+<label><input type="radio" value="a"> The right value: the dummy argument is ignored by the bridge.</label>
+<label><input type="radio" value="b"> A compile error in Verilator.</label>
+<label><input type="radio" value="c"> 0, and <code>py_last_error()</code> holds a <code>TypeError</code> message.</label>
+<label><input type="radio" value="d"> A crash.</label>
+<div class="why">(c) The bridge passes every element of the array; Python raises <code>TypeError</code> (one argument too many), the bridge returns 0 and records the message. That is why generic-bridge functions take <code>*_</code>. (a) would need an explicit count argument. (b): Python signatures are invisible to the SV compiler; that is the price of the generic bridge.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">14. Your team has a UVM environment with reusable SV agents and wants Python to write sequences and scoreboards. Which option fits best?</p>
+<label><input type="radio" value="a"> Rewrite the testbench in cocotb.</label>
+<label><input type="radio" value="b"> A function-wrapper library such as PyHDL-IF (or a hand-written bridge for a few models).</label>
+<label><input type="radio" value="c"> <code>$system("python3 model.py")</code> per transaction.</label>
+<label><input type="radio" value="d"> pyuvm on top of the existing SV agents.</label>
+<div class="why">(b) Function wrappers keep the SV agents and call Python for behavior; PyHDL-IF adds UVM proxies for exactly this. (a) and (d) are signal-level: the SV agents cannot be reused. (c) costs ~48 ms per call.</div>
+</div>
+
+<h2 id="s4"><span class="no">§4 · Lab</span>Run it, swap the backend, break it</h2>
+<p><b>Predict first.</b> Before running: how many model calls does the per-byte CRC run make? Will the per-block FIR run see the same first mismatch as the per-sample run under <code>fir_trunc</code>? Which is faster for 1 KiB CRC blocks, the Python or the C backend?</p>
+<p><b>Run.</b></p>
+<pre class="sv"><code>cd tutorial/08_python_golden_model/lab
+python3 golden.py           <span class="c"># the models alone, no simulator</span>
+python3 check.py            <span class="c"># 18 builds (3 must fail) + 1 lint, 23 runs, 51 asserts (~20 s)</span>
+python3 check.py --no-run   <span class="c"># re-check existing logs</span>
+cat build/results.txt       <span class="c"># every LOG/PASS/FAIL line</span></code></pre>
+<p><code>run.sh</code> exports <code>PYTHONPATH=$PWD:$PWD/ex</code> so the embedded interpreter finds <code>golden.py</code>; run a binary by hand the same way: <code>PYTHONPATH=$PWD ./build/vl_fir_py/Vtop +block</code>, or <code>GOLDEN_BUG=fir_trunc PYTHONPATH=$PWD ./build/vl_fir_py/Vtop</code> to see it fail.</p>
+<div class="tbl"><table>
+<tr><th>file</th><th>what it shows</th></tr>
+<tr><td class="mono">../../06_golden_model_c/lab/golden_pkg.sv</td><td>the contract, shared with step 06 (0.1)</td></tr>
+<tr><td class="mono">../../06_golden_model_c/lab/golden.c, wall.c</td><td>the C backend and the wall clock, from step 06</td></tr>
+<tr><td class="mono">py_extra_pkg.sv</td><td>Python-only extras: <code>py_mul_wide</code>, <code>py_call_i64</code>, <code>py_set_bug</code>, <code>py_last_error</code></td></tr>
+<tr><td class="mono">golden.py</td><td>the Python models + self-check</td></tr>
+<tr><td class="mono">golden_py.c</td><td>Python bridge: step 06's symbols + the extras</td></tr>
+<tr><td class="mono">tb_crc.sv</td><td>CRC scoreboard, <code>+per_byte</code>; <code>+define+STATIC_BUG</code> for E5</td></tr>
+<tr><td class="mono">tb_fir.sv</td><td>two FIR instances, <code>+block</code>; bug via <code>GOLDEN_BUG=fir_trunc</code> / <code>-DMUTANT=1</code></td></tr>
+<tr><td class="mono">tb_wide.sv</td><td>100×100→200-bit multiply (Python) vs SV</td></tr>
+<tr><td class="mono">tb_err.sv</td><td>generic bridge, chandle refcount, every failure class, <code>$error</code></td></tr>
+<tr><td class="mono">tb_perf.sv</td><td>throughput (Fig. 7)</td></tr>
+<tr><td class="mono">tb_*_fail.sv, pragma_fail.sv</td><td>expected build failures (E4, E6, a Verilator comment trap)</td></tr>
+<tr><td class="mono">ex/</td><td>exercise solutions E2, E7, E9, E10, E11</td></tr>
+</table></div>
+<p><b>Results</b> (from <code>build/</code>, asserted):</p>
+<div class="tbl"><table>
+<tr><th>experiment</th><th>Python backend</th><th>C backend</th></tr>
+<tr><td>CRC, 300 messages, 39 480 bytes, per message</td><td>PASS, 300 calls</td><td>PASS, 300 calls</td></tr>
+<tr><td>CRC, per byte</td><td>PASS, 39 480 calls</td><td>PASS, 39 480 calls</td></tr>
+<tr><td>CRC check value</td><td colspan="2"><code>cbf43926</code></td></tr>
+<tr><td>FIR ×2, 2048 samples, per sample / per block</td><td>PASS, 4096 / 16 calls</td><td>PASS, 4096 / 16 calls</td></tr>
+<tr><td>FIR with <code>fir_trunc</code> / <code>MUTANT=1</code></td><td colspan="2">first mismatch sample 0 (dut −12612, model −12613), 1729 errors, both backends, both modes</td></tr>
+<tr><td>wide multiply, 1000 vectors</td><td>PASS</td><td>— (Python-only extra)</td></tr>
+<tr><td>static-initializer TB (E5)</td><td colspan="2">PASS with <code>bytes=0</code>: the trap</td></tr>
+<tr><td>Ethernet FCS residue (E7)</td><td colspan="2"><code>2144df1c</code> for 20 frames</td></tr>
+<tr><td>model reset (E11)</td><td colspan="2">0 errors with reset, 7 without</td></tr>
+</table></div>
+<p><b>Break it yourself.</b> Comment out the mask in <code>bits_to_py</code> and run <code>tb_wide</code> (the result depends on what Verilator leaves in the top bits: it may well still pass, which is the problem with relying on it). Delete <code>v = 0;</code> in <code>py_call_i64</code> and look at <code>LOG overflow</code>. Add <code>Py_INCREF(obj)</code> in <code>fir8_new</code> and watch <code>live_after_free</code>.</p>
+
+<h2 id="s5"><span class="no">§5 · Cheat sheet</span>Step 08 on one screen</h2>
+<div class="tbl"><table>
+<tr><th>need</th><th>SV side</th><th>C bridge</th><th>Python side / pitfall</th></tr>
+<tr><td>bytes in</td><td class="mono">input byte unsigned d[], input int len</td><td class="mono">PyMemoryView_FromMemory(svGetArrayPtr(d), len, PyBUF_READ)</td><td>fixed array actual only (Verilator); valid during the call</td></tr>
+<tr><td>int16 block in/out</td><td class="mono">input shortint x[], output shortint y[]</td><td class="mono">memoryview READ / WRITE over svGetArrayPtr</td><td><code>np.frombuffer(y, np.int16)[:] = …</code>; output is a temp in Verilator</td></tr>
+<tr><td>model object</td><td class="mono">chandle h = fir8_new(...)</td><td class="mono">return PyObject_CallOneArg(cls, c);</td><td>chandle owns 1 ref; <code>Py_XDECREF</code> in free, before finalize</td></tr>
+<tr><td>per-sample method</td><td class="mono">fir8_step(h, x)</td><td class="mono">PyObject_CallMethodOneArg(h, interned, px)</td><td>plain Python ints, not numpy</td></tr>
+<tr><td>wide unsigned</td><td class="mono">bit [N-1:0]</td><td class="mono">PyLong_FromUnsignedNativeBytes / PyLong_AsNativeBytes</td><td>mask unused bits; check fit; LE host</td></tr>
+<tr><td>wide signed</td><td class="mono">bit signed [N-1:0]</td><td class="mono">sign-extend, PyLong_FromNativeBytes</td><td>model must wrap like SV</td></tr>
+<tr><td>int result</td><td class="mono">longint f(...)</td><td class="mono">PyLong_AsLongLong + PyErr_Occurred()</td><td>−1 is also a valid value</td></tr>
+<tr><td>errors</td><td class="mono">string py_last_error() (extras)</td><td class="mono">PyErr_GetRaisedException → stderr + message</td><td>contract call returns 0 → mismatch; <code>$error</code> stops Verilator</td></tr>
+<tr><td>any function</td><td class="mono">py_call_i64(mod, fn, args)</td><td class="mono">cached callable, tuple of PyLong</td><td>Python takes <code>*_</code>; errors only at run time</td></tr>
+</table></div>
+<p><b>Rules of thumb</b></p>
+<ol>
+<li>Write the imports for the model, in C types; link Python or C behind them. Python-only conveniences go in a separate package.</li>
+<li>Prefer a library reference (<code>zlib</code>, numpy, <code>int</code>) over a second hand-written algorithm.</li>
+<li>Bit-exact means integers: floor shifts, explicit rounding, explicit saturation, explicit wrap.</li>
+<li>Buffers and strings from DPI are borrowed for the call. Copy what you keep.</li>
+<li>Every conversion can fail with a valid-looking value: check <code>PyErr_Occurred()</code>.</li>
+<li>A chandle owns one reference. Count live objects.</li>
+<li>The cost is per call: batch, compare per block in regression, per transaction while debugging.</li>
+<li>Inject a model bug and log coverage counts; a PASS that tested nothing is still a PASS.</li>
+<li>Commercial simulators accept dynamic arrays, literals, and keep going after <code>$error</code>; Verilator does not. Write to the intersection.</li>
+<li>When Python should drive the testbench, not just model it, look at PyHDL-IF (UVM) or cocotb (new TBs).</li>
+</ol>
+<div class="steps"><a href="../07_embedding_python/guide.html">← 07 · Embedding Python</a><a href="../index.html">Tutorial index →</a></div>
+<p class="foot">Sources: Spear &amp; Tumbush, <i>SystemVerilog for Verification</i>, 3rd ed., ch. 12 (Ex. 12.1–12.6, §12.9); IEEE 1800-2023 clause 35 and Annex H; Python 3.14 C API (<code>PyLong_AsNativeBytes</code>, <code>PyErr_GetRaisedException</code>); zlib documentation (<code>crc32</code>); M. Ballance, <i>Properly Introducing Python to your UVM Testbench</i>, DVCon US 2026; pysv and PyHDL-IF documentation. Measurements: <code>lab/check.py</code>.</p>
+
+
+
+
+</main>
+</div>
+</body>
+</html>

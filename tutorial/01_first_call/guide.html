@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DPI-C 01: First call</title>
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../assets/guide.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/contrib/auto-render.min.js"></script>
+<script defer src="../assets/quiz.js"></script>
+<script>
+try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
+document.addEventListener('DOMContentLoaded',function(){
+  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
+  var toc=document.getElementById('toc');
+  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
+  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
+  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
+  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
+});
+function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
+function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
+</script>
+<style>
+/* local tweaks: SV and C code */
+pre.sv,pre.cc,pre.sh{font-size:13px;line-height:1.5}
+pre .c{color:var(--muted);font-style:italic}
+pre .k{color:var(--acc);font-weight:600}
+p code,li code,td code{overflow-wrap:anywhere}
+td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
+.steps{display:flex;justify-content:space-between;gap:12px;font-family:var(--font-mono);font-size:12.5px;margin-top:6px}
+</style>
+</head>
+<body>
+<svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-acc" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-2" d="M0,1 L10,5 L0,9 z"/></marker>
+</defs></svg>
+
+<div class="page">
+<details class="toc" id="toc"><summary>Contents</summary><nav><ol>
+<li class="grp">0 · Tutorial</li>
+<li><a href="#tutorial">The step in one idea</a></li>
+<li><a href="#r-why">0.1 Why DPI exists</a></li>
+<li><a href="#r-first">0.2 The first import</a></li>
+<li><a href="#r-path">0.3 What a call really does</a></li>
+<li><a href="#r-build">0.4 The Verilator build pipeline</a></li>
+<li><a href="#r-link">0.5 Linkage: <code>extern "C"</code></a></li>
+<li><a href="#r-hdr">0.6 The generated header</a></li>
+<li><a href="#r-missing">0.7 Missing and hidden symbols</a></li>
+<li><a href="#r-dir">0.8 <code>output</code> arguments</a></li>
+<li><a href="#r-name">0.9 Names: renaming, keywords, one C namespace</a></li>
+<li><a href="#r-libc">0.10 Importing libc/libm directly</a></li>
+<li><a href="#r-pure">0.11 <code>pure</code></a></li>
+<li><a href="#r-where">0.12 Where imports live</a></li>
+<li><a href="#r-width">0.13 Widths and overflow</a></li>
+<li><a href="#r-comm">0.14 Commercial simulators</a></li>
+<li><a href="#r-debug">0.15 Which stage failed?</a></li>
+<li><a href="#r-recipe">0.16 Recipe</a></li>
+<li class="grp">Practice</li>
+<li><a href="#s1">1 · Objectives</a></li>
+<li><a href="#s2">2 · Exercises</a></li>
+<li><a href="#s3">3 · Quiz</a></li>
+<li><a href="#s4">4 · Lab</a></li>
+<li><a href="#s5">5 · Cheat sheet</a></li>
+</ol></nav></details>
+
+<main>
+<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
+<div class="steps"><span>Step 01 of 08</span><a href="../02_data_types/guide.html">Next: 02 · Data types →</a></div>
+<p class="kicker">DPI-C from scratch · Part A · Step 01</p>
+<h1>The first call: import, link, and what can go wrong</h1>
+<p class="deck">An <code>import "DPI-C"</code> declaration is a promise that a C function with a matching signature will be there at link time. The simulator cannot read C, so nothing checks that promise unless you make the compiler do it. This step makes the first call work, then breaks it on purpose in every way it usually breaks.</p>
+<p class="meta"><span>Book: Spear &amp; Tumbush 3rd ed., §12.1 (pp. 415–419; PDF page = book page + 36)</span><span>Simulator: Verilator 5.052, macOS x86_64</span><span>Answers are hidden: think first</span></p>
+<div class="tools"><button onclick="setAll(true)">Open all</button><button onclick="setAll(false)">Close all</button></div>
+
+<h2 id="tutorial"><span class="no">§0 · Tutorial</span>The step in one idea</h2>
+<p class="lead">DPI is not a protocol, a socket or an API you program against. It is a <b>calling convention plus a type mapping</b>. When SystemVerilog calls an imported function, the simulator calls a plain C function in the same process, on the same thread, with arguments laid out the way the C ABI expects. When that function returns, SystemVerilog continues. No simulation time passes, nothing is copied that does not have to be, and nobody checks that the two sides agree on types except the C compiler, and only if you show it both declarations.</p>
+<p>That last sentence sets the agenda for this step. The SV side and the C side are compiled separately and meet only at the linker, by <b>symbol name</b>. Most first-week DPI bugs come from that: a name the linker cannot find (C++ name mangling, a typo, a <code>static</code>), or worse, a name it finds whose types differ from what SV assumed. The second kind links fine and returns garbage. Here you build the smallest working example, then see each failure mode with its exact error message, measured on Verilator 5.052. Every output in this page comes from the <a href="#s4">lab</a> and is asserted by <code>check.py</code>.</p>
+
+<!-- 0.1 -->
+<h3 id="r-why"><span class="no">0.1</span>Why DPI exists</h3>
+<p>Verilog always had a way to call C: the <b>PLI</b> (Programming Language Interface). It came in three generations (§12 intro): <b>TF</b> (task/function routines, 1980s), <b>ACC</b> (access routines) and <b>VPI</b> (Verilog Procedural Interface, IEEE 1364-2001, now clause 36–38 of IEEE 1800). PLI/VPI is a <em>reflection</em> API: your C code gets handles to simulator objects, walks the design hierarchy, reads and writes values through <code>vpi_get_value</code>/<code>vpi_put_value</code> with format conversion, registers callbacks on value changes and time steps. That power is why cocotb is built on VPI. It is also why calling a 5-line C function through VPI takes 50 lines: a <code>systf</code> registration table, a <code>calltf</code> routine that fetches each argument by iterating handles, a <code>compiletf</code> that checks them, and a copy of every value in and out.</p>
+<p>DPI (IEEE 1800 clause 35, Annex H for the C layer, Annex I for <code>svdpi.h</code>) takes the opposite approach. It gives up reflection: C sees only the arguments, as native C values or pointers. In exchange the call is just a function call. The simulator generates the glue at compile time, because it knows the SV prototype. It knows nothing about the C side.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 250" role="img" aria-label="Two ways to call C from SystemVerilog. Left, VPI: SV calls a system task, the simulator dispatches to a registered calltf routine that uses vpi_handle and vpi_get_value to fetch each argument, then vpi_put_value to return. Right, DPI: the SV call is compiled into a direct C function call, with arguments passed as native C values in registers.">
+<rect class="ghost" x="10" y="10" width="340" height="230" rx="12"/><text class="ttl" x="24" y="32">PLI / VPI (reflection)</text>
+<rect class="box soft" x="30" y="48" width="300" height="34" rx="8"/><text class="mid cen" x="180" y="65">SV: $my_task(a, b)</text>
+<rect class="box" x="30" y="100" width="300" height="34" rx="8"/><text class="mid cen" x="180" y="117">simulator dispatch → registered calltf</text>
+<rect class="box" x="30" y="152" width="300" height="34" rx="8"/><text class="mid cen" x="180" y="169">vpi_handle / vpi_scan / vpi_get_value ×N</text>
+<rect class="box" x="30" y="196" width="300" height="34" rx="8"/><text class="mid cen" x="180" y="213">your C code · vpi_put_value</text>
+<path class="e" d="M180,82 V100" marker-end="url(#ah)"/><path class="e" d="M180,134 V152" marker-end="url(#ah)"/><path class="e" d="M180,186 V196" marker-end="url(#ah)"/>
+<rect class="ghost" x="370" y="10" width="340" height="230" rx="12"/><text class="ttl" x="384" y="32">DPI-C (calling convention)</text>
+<rect class="box soft" x="390" y="48" width="300" height="34" rx="8"/><text class="mid cen" x="540" y="65">SV: y = factorial(i)</text>
+<rect class="box hot" x="390" y="110" width="300" height="50" rx="8"/><text class="mid cen" x="540" y="128">generated wrapper (compile time)</text><text class="note mid" x="540" y="148">converts types, then a plain C call</text>
+<rect class="box" x="390" y="186" width="300" height="34" rx="8"/><text class="mid cen" x="540" y="203">int factorial(int i)</text>
+<path class="e hot" d="M540,82 V110" marker-end="url(#ah-acc)"/><path class="e hot" d="M540,160 V186" marker-end="url(#ah-acc)"/>
+</svg>
+<figcaption><b>Fig. 0.1</b> VPI hands C a view of the simulator; DPI hands C its arguments. DPI wins whenever C only needs to compute something from values, which covers every golden model in this tutorial. VPI stays the right tool for tools that inspect the design (waveform dumpers, cocotb, coverage collectors).</figcaption>
+</figure>
+
+<div class="callout hv"><p>The book's 2012 claim still holds: "SystemVerilog only supports an interface to the C language. C++ code has to be wrapped to look like C." The <code>"DPI-C"</code> string literally means <em>C calling convention and C symbol names</em>. Any language reachable from C works through it, including C++ (step 03) and Python (step 07), but each must present C-linkage functions.</p></div>
+
+<!-- 0.2 -->
+<h3 id="r-first"><span class="no">0.2</span>The first import</h3>
+<p>Sample 12.1/12.2 of the book, rewritten as a module (the book uses <code>program</code>, which nothing here needs) and with the <code>const</code> of Sample 12.5:</p>
+<pre class="sv"><code><span class="c">// hello.sv (excerpt)</span>
+<span class="k">module</span> top;
+  <span class="k">import</span> "DPI-C" <span class="k">pure function int</span> factorial(<span class="k">input int</span> i);
+  <span class="k">initial begin</span>
+    <span class="k">for</span> (<span class="k">int</span> i = -1; i &lt;= 13; i++) $display("LOG fact i=%0d f=%0d", i, factorial(i));
+    $finish;
+  <span class="k">end</span>
+<span class="k">endmodule</span></code></pre>
+<pre class="cc"><code><span class="c">/* hello.c (excerpt): the C side. Why extern "C" is needed: 0.5 */</span>
+<span class="k">extern</span> "C" <span class="k">int</span> factorial(<span class="k">const int</span> i) {   <span class="c">/* const: the compiler rejects writes to an input */</span>
+  <span class="k">return</span> i &lt;= 1 ? 1 : i * factorial(i - 1);
+}</code></pre>
+<pre class="sh"><code>$ verilator --binary --top-module top hello.sv hello.c   <span class="c"># .c file on the same command line</span>
+$ ./obj_dir/Vtop
+LOG fact i=10 f=3628800
+LOG fact i=12 f=479001600
+LOG fact i=13 f=1932053504          <span class="c"># 13! = 6227020800 does not fit in 32 bits (0.13)</span></code></pre>
+<p>The import declaration has four parts. Learn them once:</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 210" role="img" aria-label="Anatomy of an import declaration: import, the spec string DPI-C, an optional property pure or context, an optional c_name followed by equals, and then a normal SV function or task prototype with SV types. The c_name, or the SV name if there is none, is the linker symbol.">
+<text class="ttl" x="20" y="28">import declaration (IEEE 1800-2023 §35.5.4)</text>
+<rect class="box soft" x="20" y="46" width="76" height="36" rx="6"/><text class="mid cen" x="58" y="64">import</text>
+<rect class="box hot" x="104" y="46" width="90" height="36" rx="6"/><text class="mid cen" x="149" y="64">"DPI-C"</text>
+<rect class="box soft" x="202" y="46" width="72" height="36" rx="6"/><text class="mid cen" x="238" y="64">pure</text>
+<rect class="box hot" x="282" y="46" width="108" height="36" rx="6"/><text class="mid cen" x="336" y="64">\expect =</text>
+<rect class="box" x="398" y="46" width="302" height="36" rx="6"/><text class="mid cen" x="549" y="64">function int fexpect();</text>
+<text class="note" x="20" y="104">keyword</text>
+<text class="note" x="104" y="104">spec string:</text><text class="note" x="104" y="120">"DPI-C" only</text>
+<text class="note" x="202" y="104">property</text><text class="note" x="202" y="120">pure | context</text><text class="note" x="202" y="136">(optional)</text>
+<text class="note" x="282" y="156">c_name = (optional):</text><text class="note" x="282" y="172">the LINKER symbol</text>
+<text class="note" x="398" y="104">an ordinary SV prototype: SV name, SV types,</text><text class="note" x="398" y="120">directions, no body. The simulator derives</text><text class="note" x="398" y="136">the C prototype from this line alone.</text>
+<path class="e" d="M336,82 V142" marker-end="url(#ah)"/>
+</svg>
+<figcaption><b>Fig. 0.2</b> The c_name defaults to the SV name. Either way, it is a global C symbol: the only thing the linker uses to find the function.</figcaption>
+</figure>
+
+<!-- 0.3 -->
+<h3 id="r-path"><span class="no">0.3</span>What a call really does</h3>
+<p>Verilator turns your SV into C++. For each import it generates a small <b>wrapper</b> function named after the scope (<code>Vtop___024root____Vdpiimwrap_top__DOT__addmul_TOP</code>). Here is the real one for Sample 12.4's <code>addmul</code>, taken from <code>build/vl_hello/Vtop___024root__0.cpp</code>:</p>
+<pre class="cc"><code><span class="k">extern</span> "C" <span class="k">int</span> addmul(<span class="k">int</span> a, <span class="k">int</span> b, <span class="k">int</span>* sum);     <span class="c">// generated from the SV import</span>
+
+<span class="k">void</span> Vtop___024root____Vdpiimwrap_top__DOT__addmul_TOP(IData a, IData b, IData &amp;sum, IData &amp;addmul__Vfuncrtn) {
+    sum = 0U;
+    <span class="k">int</span> a__Vcvt;  a__Vcvt = a;              <span class="c">// SV value -&gt; C type</span>
+    <span class="k">int</span> b__Vcvt;  b__Vcvt = b;
+    <span class="k">int</span> sum__Vcvt;                           <span class="c">// a TEMPORARY for the output (uninitialized!)</span>
+    <span class="k">int</span> addmul__Vfuncrtn__Vcvt;
+    addmul__Vfuncrtn__Vcvt = addmul(a__Vcvt, b__Vcvt, &amp;sum__Vcvt);   <span class="c">// the plain C call</span>
+    sum = (sum__Vcvt);                       <span class="c">// copy back after return</span>
+    addmul__Vfuncrtn = (addmul__Vfuncrtn__Vcvt);
+}</code></pre>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 230" role="img" aria-label="Call path of p = addmul(6, 7, s). The SV statement becomes a call to the generated wrapper, which copies a and b into C ints and passes the address of a temporary for sum. The C function runs on the same thread and returns 42, having written 13 to the temporary. The wrapper copies 13 to s and 42 to p. Simulation time does not advance.">
+<rect class="box soft" x="20" y="30" width="190" height="60" rx="8"/><text class="lbl" x="115" y="54">SV process</text><text class="note mid" x="115" y="74">p = addmul(6, 7, s)</text>
+<rect class="box hot" x="265" y="20" width="190" height="190" rx="10"/><text class="lbl" x="360" y="44">wrapper (generated)</text>
+<text class="t mid" x="360" y="74">a__Vcvt = 6</text><text class="t mid" x="360" y="94">b__Vcvt = 7</text><text class="t mid" x="360" y="114">int sum__Vcvt; // temp</text>
+<text class="t mid" x="360" y="168">s = sum__Vcvt  (13)</text><text class="t mid" x="360" y="188">p = ret  (42)</text>
+<rect class="box" x="510" y="80" width="190" height="80" rx="8"/><text class="lbl" x="605" y="104">addmul (your C)</text><text class="note mid" x="605" y="124">*sum = a + b;</text><text class="note mid" x="605" y="142">return a * b;</text>
+<path class="e" d="M210,60 H265" marker-end="url(#ah)"/>
+<path class="e hot" d="M455,100 H510" marker-end="url(#ah-acc)"/><text class="t" x="460" y="92">call</text>
+<path class="e" d="M510,140 H455" marker-end="url(#ah)"/><text class="t" x="462" y="156">return</text>
+<path class="e" d="M265,180 H120 V90" marker-end="url(#ah)"/>
+<text class="note" x="20" y="222">same OS thread, same time slot: $time does not move during the call</text>
+</svg>
+<figcaption><b>Fig. 0.3</b> Inputs are passed by value; outputs go through a pointer to a temporary that is copied back on return. In Verilator, C never holds a pointer into the simulator's own storage for a plain <code>output int</code>; the standard allows either.</figcaption>
+</figure>
+<p>Three consequences you will use for the rest of the tutorial:</p>
+<ul>
+<li><b>The call blocks the simulator.</b> If C takes 2 s, the whole simulation stops for 2 s. No other SV process runs and no time passes. That is the right behavior for a golden model, and the reason a slow model (a Python one, step 08) makes the whole simulation slow.</li>
+<li><b>An <code>output</code> is write-only from C's point of view.</b> The temporary starts uninitialized, so reading <code>*sum</code> before writing it reads garbage. The standard does not define the initial value of an <code>output</code> formal, and commercial simulators may pass a pointer to something other than a fresh temporary. Same rule everywhere: write it, never read it first.</li>
+<li><b>Overhead is a few conversions plus one call.</b> For scalars that is nanoseconds. Step 06 measures it.</li>
+</ul>
+<p><b>Imports in combinational logic.</b> An import can be called anywhere a function can: <code>initial</code>, <code>always</code>, a class method, an <code>always_comb</code>, a continuous <code>assign</code>. In the last two the simulator decides when to call it: whenever it re-evaluates the expression. <code>lab/comb.sv</code> drives one counter <code>x</code> through two call sites, <code>always_comb y = ping_raw(x)</code> and <code>assign z = ping_raw(x + 1)</code>, and lets <code>x</code> change 10 times:</p>
+<pre class="sh"><code>LOG comb t=1 calls=2                        <span class="c"># both sites evaluated once at time 0</span>
+LOG comb t=101 calls=22 x=10 y=10 z=11      <span class="c"># + 10 changes x 2 sites</span></code></pre>
+<p>Verilator is economical here: one call per input change per site. An event-driven simulator may evaluate a combinational process more than once per time step (glitches through delta cycles), and nothing in the LRM promises "exactly once per change". A stateless (truly <code>pure</code>) function does not care. A stateful C model called from <code>always_comb</code> advances its state an unpredictable number of times. <b>Call stateful models only from clocked or procedural code</b>, where you control the count.</p>
+
+<!-- 0.4 -->
+<h3 id="r-build"><span class="no">0.4</span>The Verilator build pipeline</h3>
+<p>With <code>--binary</code>, Verilator does three things in one command: it translates SV to C++, writes a makefile, and runs make. Every non-SV file on the command line (<code>.c</code>, <code>.cpp</code>, <code>.o</code>, <code>.a</code>) becomes part of that build. The key line of the generated <code>Vtop.mk</code>:</p>
+<pre class="sh"><code>hello.o: hello.c
+	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $&lt;</code></pre>
+<p><b><code>$(CXX)</code>, the C++ compiler, even for a <code>.c</code> file.</b> On a fresh compile clang even says so: <code>clang: warning: treating 'c' input as 'c++' when in C++ mode, this behavior is deprecated</code>. So in Verilator your "C" is always C++. That has one big consequence, in the next section.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 240" role="img" aria-label="Verilator build pipeline. hello.sv goes into verilator, which writes Vtop C++ sources, the prototype header Vtop__Dpi.h and Vtop.mk. hello.c is compiled by the C++ compiler into hello.o, optionally including Vtop__Dpi.h. The linker combines Vtop__ALL.a, hello.o and the Verilator runtime into the Vtop executable. Symbol names are matched only at the link step.">
+<rect class="box soft" x="20" y="30" width="120" height="40" rx="8"/><text class="mid cen" x="80" y="50">hello.sv</text>
+<rect class="box soft" x="20" y="160" width="120" height="40" rx="8"/><text class="mid cen" x="80" y="180">hello.c</text>
+<rect class="box" x="190" y="20" width="150" height="60" rx="8"/><text class="lbl" x="265" y="44">verilator</text><text class="note mid" x="265" y="64">SV → C++</text>
+<rect class="box" x="390" y="16" width="150" height="30" rx="6"/><text class="mid cen" x="465" y="31">Vtop*.cpp → .a</text>
+<rect class="box hot" x="390" y="56" width="150" height="30" rx="6"/><text class="mid cen" x="465" y="71">Vtop__Dpi.h</text>
+<rect class="box" x="190" y="160" width="150" height="40" rx="8"/><text class="mid cen" x="265" y="180">$(CXX) -c → hello.o</text>
+<rect class="box hot" x="590" y="100" width="110" height="60" rx="10"/><text class="lbl" x="645" y="124">link</text><text class="note mid" x="645" y="144">→ Vtop</text>
+<path class="e" d="M140,50 H190" marker-end="url(#ah)"/><path class="e" d="M340,40 H390" marker-end="url(#ah)"/><path class="e" d="M340,62 H390" marker-end="url(#ah)"/>
+<path class="e" d="M140,180 H190" marker-end="url(#ah)"/>
+<path class="e hot" d="M465,86 V130 H265 V160" marker-end="url(#ah-acc)"/><text class="t" x="290" y="124">#include (optional, recommended)</text>
+<path class="e" d="M540,31 H645 V100" marker-end="url(#ah)"/><path class="e" d="M340,180 H645 V160" marker-end="url(#ah)"/>
+<text class="note" x="300" y="226">names meet only at the link: "_factorial" must exist in some .o</text>
+</svg>
+<figcaption><b>Fig. 0.4</b> Two independent compilations, joined by the linker. Including <code>Vtop__Dpi.h</code> is the only way to let the C++ compiler compare both sides (0.6).</figcaption>
+</figure>
+<p>For larger projects the same pieces work without <code>--binary</code>: <code>verilator --cc --exe</code> plus your own <code>main</code>, or compile the C into a library and pass <code>-LDFLAGS</code>. Passing compiler and linker flags looks like <code>-CFLAGS -I/some/include -LDFLAGS -lm</code>. Step 07 uses exactly that to link Python.</p>
+
+<!-- 0.5 -->
+<h3 id="r-link"><span class="no">0.5</span>Linkage: why <code>extern "C"</code></h3>
+<p>C++ supports overloading, so a C++ compiler encodes the parameter types into the symbol name (<b>name mangling</b>). <code>int factorial(int)</code> compiled as C++ becomes <code>__Z9factoriali</code> on macOS (<code>_Z9factoriali</code> on Linux ELF). The generated SV side declares <code>extern "C" int factorial(int)</code>, so it asks the linker for <code>_factorial</code>. The lab's <code>noextern.c</code> drops the <code>extern "C"</code>:</p>
+<pre class="sh"><code>$ nm build/vl_noextern/noextern.o | grep fact
+0000000000000000 T __Z9factoriali
+<span class="c"># link step:</span>
+Undefined symbols for architecture x86_64:
+  "_addmul", referenced from:
+      Vtop___024root___eval_initial(Vtop___024root*) in Vtop__ALL.a[2](Vtop__ALL.o)
+      Vtop___024root____Vdpiimwrap_top__DOT__addmul_TOP(unsigned int, unsigned int, unsigned int&amp;, unsigned int&amp;) in ...
+  "_expect", referenced from: ...
+  "_factorial", referenced from: ...
+ld: symbol(s) not found for architecture x86_64</code></pre>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 190" role="img" aria-label="Symbol matching at link time. Vtop__ALL.o needs the undefined symbol _factorial. With extern C, hello.o defines _factorial and the link succeeds. Without extern C, noextern.o defines the mangled __Z9factoriali and the link fails with Undefined symbols.">
+<rect class="box" x="20" y="70" width="200" height="56" rx="8"/><text class="lbl" x="120" y="92">Vtop__ALL.o</text><text class="note mid" x="120" y="112">U _factorial</text>
+<rect class="box hot" x="480" y="20" width="220" height="56" rx="8"/><text class="lbl" x="590" y="42">hello.o (extern "C")</text><text class="note mid" x="590" y="62">T _factorial</text>
+<rect class="box soft" x="480" y="120" width="220" height="56" rx="8"/><text class="lbl" x="590" y="142">noextern.o (C++)</text><text class="note mid" x="590" y="162">T __Z9factoriali</text>
+<path class="e hot" d="M220,90 H480" marker-end="url(#ah-acc)"/><text class="t" x="300" y="82">match: links</text>
+<path class="e" d="M220,110 C330,110 380,148 480,148" marker-end="url(#ah)"/><text class="t" x="236" y="180">no match: Undefined symbols</text>
+</svg>
+<figcaption><b>Fig. 0.5</b> The linker compares strings. <code>U</code> = undefined (needed), <code>T</code> = defined in the text section.</figcaption>
+</figure>
+<p>Two portable fixes, both in the lab:</p>
+<pre class="cc"><code><span class="c">/* fix 1 (hello.c): C linkage when compiled as C++, a no-op when compiled as C (commercial flows) */</span>
+<span class="k">#ifdef</span> __cplusplus
+<span class="k">extern</span> "C" {
+<span class="k">#endif</span>
+<span class="k">int</span> factorial(<span class="k">const int</span> i) { ... }
+<span class="k">#ifdef</span> __cplusplus
+}
+<span class="k">#endif</span>
+
+<span class="c">/* fix 2 (hdr.c): include the generated prototypes; a definition after an extern "C"
+   declaration of the same function inherits C linkage. No extern "C" needed in this file. */</span>
+<span class="k">#include</span> "Vtop__Dpi.h"
+<span class="k">int</span> factorial(<span class="k">const int</span> i) { ... }</code></pre>
+<p>Fix 2 is better: it also type-checks (next section). Both programs print identical logs (asserted in <code>check.py</code>).</p>
+
+<!-- 0.6 -->
+<h3 id="r-hdr"><span class="no">0.6</span>The generated header: your type checker</h3>
+<p>The book (§12.1.4) says it plainly: "The SystemVerilog simulator cannot compare the types as it is unable to read the C code." It mentions VCS's <code>vc_hdrs.h</code> and Questa's <code>incl.h</code> as guides. In Verilator the file is <code>V&lt;top&gt;__Dpi.h</code> in the <code>-Mdir</code>. Here is the real one for <code>hello.sv</code>:</p>
+<pre class="cc"><code><span class="c">// Verilator output: Prototypes for DPI import and export functions.
+// Manually include this file where DPI .c import functions are declared to ensure
+// the C functions match the expectations of the DPI imports.</span>
+<span class="k">#include</span> "svdpi.h"
+<span class="k">#ifdef</span> __cplusplus
+<span class="k">extern</span> "C" {
+<span class="k">#endif</span>
+    <span class="c">// DPI IMPORTS</span>
+    <span class="k">extern int</span> access(<span class="k">const char</span>* path, <span class="k">int</span> mode);
+    <span class="k">extern int</span> addmul(<span class="k">int</span> a, <span class="k">int</span> b, <span class="k">int</span>* sum);
+    <span class="k">extern int</span> expect();
+    <span class="k">extern double</span> fabs(<span class="k">double</span> x);
+    <span class="k">extern int</span> factorial(<span class="k">int</span> i);
+    <span class="k">extern double</span> pow(<span class="k">double</span> x, <span class="k">double</span> y);
+    <span class="k">extern double</span> sin(<span class="k">double</span> x);
+<span class="k">#ifdef</span> __cplusplus
+}
+<span class="k">#endif</span></code></pre>
+<p>It is also the fastest way to learn the type mapping: write the SV import, build, read the header. Step 02 does exactly that for every type.</p>
+<p><b>What a mismatch looks like without the header.</b> <code>mismatch.sv</code> imports <code>function longint negate(input longint v)</code>; the C author wrote <code>extern "C" int negate(int v) { return -v; }</code>. There is no mangling to save you: the names match and it links. Then:</p>
+<pre class="sh"><code>LOG mismatch v=4294967301 negate=4294967291 expected=-4294967301</code></pre>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 220" role="img" aria-label="Register-level view of the mismatch on x86-64. SV passes the 64-bit value 0x1_0000_0005 in register rdi. C reads only the low half, edi, and sees 5. C returns -5 in eax as 0xFFFFFFFB; writing eax zero-extends rax, so SV reads 0x00000000FFFFFFFB, which is 4294967291.">
+<text class="ttl" x="20" y="28">x86-64 System V ABI: args in rdi, rsi…; integer result in rax</text>
+<rect class="box soft" x="20" y="50" width="160" height="34" rx="6"/><text class="mid cen" x="100" y="67">SV: longint v</text>
+<rect class="reg" x="220" y="50" width="200" height="34" rx="4"/><rect class="reg hot" x="320" y="50" width="100" height="34" rx="4"/>
+<text class="mid cen" x="270" y="67">0x00000001</text><text class="mid cen" x="370" y="67">0x00000005</text><text class="note" x="430" y="72">rdi (C reads only edi = 5)</text>
+<rect class="box soft" x="20" y="120" width="160" height="34" rx="6"/><text class="mid cen" x="100" y="137">C: return -v</text>
+<rect class="reg" x="220" y="120" width="200" height="34" rx="4"/><rect class="reg hot" x="320" y="120" width="100" height="34" rx="4"/>
+<text class="mid cen" x="270" y="137">0x00000000</text><text class="mid cen" x="370" y="137">0xFFFFFFFB</text><text class="note" x="430" y="142">rax (eax write zero-extends)</text>
+<text class="t" x="220" y="186">SV reads all of rax as longint: 0x00000000_FFFFFFFB = 4294967291</text>
+<text class="note" x="220" y="206">expected -4294967301. Undefined behavior; this is what x86-64 happens to do.</text>
+</svg>
+<figcaption><b>Fig. 0.6</b> Neither side is "wrong" from its own point of view. The ABI moved bits exactly as each side's prototype said. Only the C compiler, shown both prototypes, could have caught it.</figcaption>
+</figure>
+<p><b>With the header.</b> <code>mismatch_hdr.c</code> adds <code>#include "Vtop__Dpi.h"</code> and keeps the wrong definition inside <code>extern "C"</code>:</p>
+<pre class="sh"><code>../../mismatch_hdr.c:3:16: error: functions that differ only in their return type cannot be overloaded</code></pre>
+<div class="callout trap"><p><b>The header only checks what has C linkage.</b> <code>mismatch_hdr2.c</code> includes the header but defines <code>int negate(int v)</code> <em>outside</em> <code>extern "C"</code>. The parameter type differs from the header's <code>long long negate(long long)</code>, so C++ sees a <b>new overload</b>, compiles it with a mangled name, and the build fails only at link time: <code>Undefined symbols … "_negate"</code>. So: include the header <em>and</em> make the definitions match it. Copy the prototype from the header, never retype it.</p></div>
+
+<!-- 0.7 -->
+<h3 id="r-missing"><span class="no">0.7</span>Missing and hidden symbols</h3>
+<p>If an imported function is never defined, the generated code still calls it, so the link fails. <code>missing.c</code> forgets <code>addmul</code>:</p>
+<pre class="sh"><code>Undefined symbols for architecture x86_64:
+  "_addmul", referenced from:
+      Vtop___024root____Vdpiimwrap_top__DOT__addmul_TOP(unsigned int, unsigned int, unsigned int&amp;, unsigned int&amp;) in ...</code></pre>
+<p>Read the "referenced from" line: the wrapper name tells you the <b>SV scope</b> (<code>top</code>) and the <b>SV name</b> (<code>addmul</code>) of the import that wants it. With a renamed import (0.9) the symbol is the c_name and the wrapper carries the SV name. That is how you tell them apart.</p>
+<p>The same error appears if the function exists but is <code>static</code> (internal linkage, invisible outside its own <code>.o</code>; exercise E12), and with Linux GNU ld it reads <code>undefined reference to `addmul'</code>.</p>
+<div class="callout note" style="--c-label:'Commercial simulators'"><p>Simulators that load the C as a shared library at run time (<code>vsim -sv_lib</code>, <code>xrun -sv_lib</code>) report a missing symbol when the simulation <em>loads</em> or at elaboration, not at link: Questa's message names the unresolved DPI import. Same cause, later moment. Not measured here.</p></div>
+
+<!-- 0.8 -->
+<h3 id="r-dir"><span class="no">0.8</span><code>output</code> arguments, for <code>int</code></h3>
+<p>Arguments default to <code>input</code>. An <code>input int</code> arrives as a C <code>int</code> (by value). An <code>output int</code> or <code>inout int</code> arrives as <code>int*</code>. <code>ref</code> is not allowed in imports (§12.1.3), because C cannot hold a reference to an SV variable across the call. <b>Verilator 5.052 does not enforce this</b>: <code>import "DPI-C" function void bump(ref int x);</code> compiles without a warning (even with <code>-Wall</code>) and the header shows <code>void bump(int* x)</code>, i.e. it is treated like <code>inout</code> (<code>lab/ref.sv</code>). Commercial tools reject it, so don't write it. Sample 12.4:</p>
+<pre class="sv"><code><span class="k">import</span> "DPI-C" <span class="k">function int</span> addmul(<span class="k">input int</span> a, <span class="k">input int</span> b, <span class="k">output int</span> sum);
+...
+p = addmul(6, 7, s);      <span class="c">// LOG addmul p=42 s=13</span></code></pre>
+<pre class="cc"><code><span class="k">int</span> addmul(<span class="k">int</span> a, <span class="k">int</span> b, <span class="k">int</span>* sum) { *sum = a + b; <span class="k">return</span> a * b; }</code></pre>
+<p>Rules for now, the full table is in <a href="../02_data_types/guide.html">step 02</a>:</p>
+<ul>
+<li><code>input</code>: by value for small types. Mark it <code>const</code> in C if you like (Sample 12.5); the header omits <code>const</code> for scalars because it does not matter to the caller.</li>
+<li><code>output</code>: write it on every path. Its initial value is undefined (Fig. 0.3).</li>
+<li><code>inout</code>: the pointer's target holds the SV value on entry, and whatever C leaves there is copied back.</li>
+<li>Return types are limited to "small values": <code>void</code>, <code>byte</code>, <code>shortint</code>, <code>int</code>, <code>longint</code>, <code>real</code>, <code>shortreal</code>, <code>chandle</code>, <code>string</code>, and scalar <code>bit</code>/<code>logic</code>. A <code>bit [6:0]</code> cannot be returned; use an <code>output</code> (§12.1.4).</li>
+</ul>
+
+<!-- 0.9 -->
+<h3 id="r-name"><span class="no">0.9</span>Names: renaming, keywords, one C namespace</h3>
+<p>The optional <code>c_name =</code> separates the linker symbol from the SV name. The book's Sample 12.3 needs it because <code>expect</code> is an SV keyword, so a C function called <code>expect</code> cannot be imported under its own name:</p>
+<pre class="sv"><code><span class="k">import</span> "DPI-C" <span class="k">function int</span> expect();      <span class="c">// keyword.sv: syntax error, unexpected expect</span>
+<span class="k">import</span> "DPI-C" \expect = <span class="k">function int</span> fexpect();   <span class="c">// hello.sv: works -&gt; LOG rename fexpect=42</span></code></pre>
+<div class="callout errata" style="--c-label:'Book check'"><p>The backslash in Sample 12.3 (<code>\expect =</code>) is not decoration. Without it the SV lexer sees the keyword <code>expect</code> before it knows it is a c_name: Verilator says <code>syntax error, unexpected expect, expecting function or task</code>. The escaped identifier <code>\expect</code> (terminated by the space) is passed to the linker as plain <code>expect</code>. The book's second example, <code>stat = function int file_exists(...)</code>, cannot work as printed: <code>stat</code> takes a <code>struct stat*</code>, not an <code>int[1000]</code>. The lab uses libc <code>access(path, F_OK)</code> instead: <code>LOG access sv=0 none=-1</code>.</p></div>
+<p>Renaming also lets one C function appear under a friendlier SV name, or several SV names map to one C function (same signature). The reverse is forbidden. <b>All imports share one global C namespace</b>, and a C symbol can have only one SV signature in the whole design, even across packages:</p>
+<pre class="sh"><code>package pa; import "DPI-C" function int  twice(input int x);  endpackage
+package pb; import "DPI-C" function real twice(input real x); endpackage
+%Error: dup.sv:3:42: Duplicate declaration of DPI function with different signature: 'twice'</code></pre>
+<p>SV has no overloading of routines, and C has no overloading of symbols. If you need <code>int</code> and <code>real</code> versions, write two C functions.</p>
+
+<!-- 0.10 -->
+<h3 id="r-libc"><span class="no">0.10</span>Importing libc and libm directly</h3>
+<p>Because DPI is just a C call, any C library function whose types map cleanly can be imported with no wrapper (Sample 12.6). The executable already links libc and libm:</p>
+<pre class="sv"><code><span class="k">import</span> "DPI-C" <span class="k">pure function real</span> fabs(<span class="k">input real</span> x);
+<span class="k">import</span> "DPI-C" <span class="k">pure function real</span> sin(<span class="k">input real</span> x);
+<span class="k">import</span> "DPI-C" <span class="k">pure function real</span> pow(<span class="k">input real</span> x, <span class="k">input real</span> y);
+<span class="k">import</span> "DPI-C" access = <span class="k">function int</span> file_access(<span class="k">input string</span> path, <span class="k">input int</span> mode);
+<span class="c">// LOG libm fabs=1.500 sin30=0.500000 pow=1024.0
+// LOG access sv=0 none=-1</span></code></pre>
+<div class="callout trap"><p><b>It only works if Verilator's prototype is identical to the system header's.</b> Verilator's generated C++ (through its runtime headers) includes <code>&lt;string.h&gt;</code> and friends, so the two declarations meet in one translation unit. <code>strlen</code> returns <code>size_t</code>, which is <code>unsigned long</code> on LP64 systems (macOS, Linux). No SV type generates <code>unsigned long</code>: <code>longint unsigned</code> becomes <code>unsigned long long</code>, the same width but a different C++ type. Result (exercise E5):<br><code>error: functions that differ only in their return type cannot be overloaded … size_t strlen(const char *__s)</code>.<br>The cure is a one-line wrapper. <code>double</code>/<code>int</code>/<code>const char*</code> functions like <code>sin</code>, <code>pow</code>, <code>log10</code> and <code>access</code> match exactly and import fine.</p></div>
+<p>Compiler builtins like <code>__builtin_popcount</code> are not symbols at all (the compiler inlines them), so they always need a wrapper (exercise E11).</p>
+
+<!-- 0.11 -->
+<h3 id="r-pure"><span class="no">0.11</span><code>pure</code></h3>
+<p>IEEE 1800-2023 §35.5.2: a <code>pure</code> function's result depends <b>only on its input arguments</b>, and it has <b>no side effects</b>: no global or static state, no file I/O, no printing, no calls to exported SV routines. In return the simulator may optimize as if it were a mathematical function. It may skip a call whose result is unused, evaluate <code>f(2)+f(2)</code> once, or hoist a call out of a loop. Only functions can be <code>pure</code> (an imported task never is), and output/inout arguments are not allowed in a pure function.</p>
+<p>The lab tells a deliberate lie: <code>ping()</code> is imported as <code>pure</code> but counts its calls in a C static.</p>
+<div class="tbl"><table>
+<tr><th>SV code</th><th>calls the LRM allows</th><th>calls in Verilator 5.052</th></tr>
+<tr><td><code>void'(ping(1));</code></td><td>0 or 1</td><td class="mono">1</td></tr>
+<tr><td><code>y = ping(2) + ping(2);</code></td><td>1 or 2</td><td class="mono">2</td></tr>
+<tr><td><code>for (k=0;k&lt;4;k++) y += ping(3);</code></td><td>1 to 4</td><td class="mono">4</td></tr>
+<tr><td>same with the non-pure <code>ping_raw</code></td><td>exactly 2</td><td class="mono">2</td></tr>
+</table></div>
+<p>Verilator calls every time today. That is the dangerous outcome: the lie goes unnoticed until a simulator (or a future Verilator) uses the license the LRM gives it, and your scoreboard silently loses transactions. <b>Mark a function <code>pure</code> only if it really is.</b> Factorial, CRC, <code>sin</code>: yes. A model with internal state, anything that logs, anything that reads a file: no. The opposite of <code>pure</code> is not "plain" but <code>context</code>, which is about calling back into SV; that is <a href="../05_export_and_context/guide.html">step 05</a>.</p>
+
+<!-- 0.12 -->
+<h3 id="r-where"><span class="no">0.12</span>Where imports live</h3>
+<p>An import is a declaration and can go wherever a function declaration can: a module, interface, program, package, or the compilation unit (<code>$unit</code>). Its SV name is local to that scope; its C name is global. Put them in a <b>package</b> and import the package (§12.1.2), so there is exactly one SV declaration per C function:</p>
+<pre class="sv"><code><span class="k">package</span> dpi_pkg;
+  <span class="k">import</span> "DPI-C" <span class="k">pure function int</span> factorial(<span class="k">input int</span> i);
+<span class="k">endpackage</span>
+<span class="k">module</span> child; <span class="k">import</span> dpi_pkg::*; <span class="k">initial</span> $display("LOG pkg who=%m f6=%0d", factorial(6)); <span class="k">endmodule</span>
+<span class="c">// LOG pkg who=top.c2 f6=720
+// LOG pkg who=top.c1 f6=720
+// LOG pkg who=top f7=5040</span></code></pre>
+<p>Two instances of <code>child</code> call the <em>same</em> C function. C cannot tell them apart unless it asks for the caller's scope (<code>context</code>, step 05) or you pass a handle (step 03).</p>
+
+<!-- 0.13 -->
+<h3 id="r-width"><span class="no">0.13</span>Widths and overflow</h3>
+<p>SV's <code>int</code> is exactly 32-bit signed two's complement. C's <code>int</code> is "at least 16 bits"; on every platform you will simulate on (LP64 Linux/macOS, LLP64 Windows) it is 32. <code>svdpi.h</code> does not change that. The mapping <code>int</code> ↔ <code>int</code> and <code>longint</code> ↔ <code>long long</code> is what the standard specifies, so use those C types, not <code>int32_t</code>/<code>int64_t</code> typedefs (same width but possibly different C++ types, the 0.10 trap again).</p>
+<p>13! = 6227020800 needs 33 bits. The DPI returns what the C <code>int</code> holds:</p>
+$$13! \bmod 2^{32} = 6227020800 - 2^{32} = 1932053504$$
+<p>which is the lab's <code>LOG fact i=13 f=1932053504</code>. Strictly, signed overflow is <b>undefined behavior in C</b>: the compiler may assume it never happens. Golden models must be bit-exact, so do wrap-around arithmetic in <code>unsigned</code> types (defined to wrap mod 2<sup>N</sup>) and convert at the end, as <code>ex2_fact64.c</code> does. Hardware wraps; your model must wrap the same way <em>by definition</em>, not by luck.</p>
+
+<!-- 0.14 -->
+<h3 id="r-comm"><span class="no">0.14</span>Commercial simulators (not measured here)</h3>
+<p>Same language rules (clause 35), different build mechanics. These lines are from vendor documentation; this lab could not run them:</p>
+<div class="tbl"><table>
+<tr><th>Simulator</th><th>compile C with the design</th><th>prebuilt shared library</th><th>prototype header</th></tr>
+<tr><td>Questa</td><td class="mono">vlog -sv top.sv dpi.c</td><td class="mono">vsim -sv_lib ./libdpi top</td><td class="mono">vlog -dpiheader dpi.h</td></tr>
+<tr><td>Xcelium</td><td class="mono">xrun top.sv dpi.c</td><td class="mono">xrun -sv_lib libdpi.so</td><td class="mono">xrun -dpiheader dpi.h</td></tr>
+<tr><td>VCS</td><td class="mono">vcs -sverilog top.sv dpi.c</td><td class="mono">simv -sv_lib libdpi</td><td class="mono">vc_hdrs.h (automatic)</td></tr>
+<tr><td>Verilator</td><td class="mono">verilator --binary top.sv dpi.c</td><td class="mono">dpi.a / -LDFLAGS</td><td class="mono">V&lt;top&gt;__Dpi.h (automatic)</td></tr>
+</table></div>
+<p>Two practical differences: they compile <code>.c</code> files as <b>C</b>, so missing <code>extern "C"</code> only bites with <code>.cpp</code> files there; and with <code>-sv_lib</code> the library is <code>dlopen</code>ed at run time, so the C side can be rebuilt without recompiling the design. The <code>#ifdef __cplusplus</code> pattern in 0.5 makes one source file work everywhere. <code>import "DPI"</code> (no <code>-C</code>, the IEEE 1800-2005 spelling, deprecated since 2009) may still be accepted by commercial tools with a warning. Verilator rejects it: <code>Unsupported DPI type 'DPI': Use 'DPI-C'</code>.</p>
+
+<!-- 0.15 -->
+<h3 id="r-debug"><span class="no">0.15</span>Which stage failed? A map of DPI errors</h3>
+<p>Every failure in this step happens at one of four stages, and the stage tells you what to look at. Find the stage first; the message is then usually self-explanatory. In Verilator all four stages run inside one <code>verilator --binary</code> command, so the first job is to find which tool printed the error. Verilator prints <code>%Error:</code>, the compiler prints <code>file.c:line:col: error:</code>, the linker prints <code>Undefined symbols</code> or <code>undefined reference</code>, and the simulation prints whatever your code prints.</p>
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 250" role="img" aria-label="Four stages where a DPI build can fail, left to right: Verilator elaboration (keyword as name, import DPI without C, duplicate signature), C++ compile (return type clash with the generated header or a system header, writing a const input), link (missing extern C, missing function, static function, overload created by a parameter mismatch), run time (type mismatch without header, lying pure, uninitialized output, signed overflow). Errors further right are harder to diagnose; the run-time column has no error message at all.">
+<rect class="box" x="10" y="20" width="165" height="44" rx="8"/><text class="lbl" x="92" y="38">1 · Verilator</text><text class="note mid" x="92" y="54">%Error: file.sv:…</text>
+<rect class="box" x="190" y="20" width="165" height="44" rx="8"/><text class="lbl" x="272" y="38">2 · C++ compile</text><text class="note mid" x="272" y="54">model.c:3:16: error:</text>
+<rect class="box" x="370" y="20" width="165" height="44" rx="8"/><text class="lbl" x="452" y="38">3 · link</text><text class="note mid" x="452" y="54">Undefined symbols</text>
+<rect class="box hot" x="550" y="20" width="160" height="44" rx="8"/><text class="lbl" x="630" y="38">4 · run time</text><text class="note mid" x="630" y="54">no message at all</text>
+<path class="e" d="M175,42 H190" marker-end="url(#ah)"/><path class="e" d="M355,42 H370" marker-end="url(#ah)"/><path class="e hot" d="M535,42 H550" marker-end="url(#ah-acc)"/>
+<text class="note" x="16" y="92">keyword as SV name</text><text class="note" x="16" y="112">import &quot;DPI&quot;</text><text class="note" x="16" y="132">duplicate signature</text><text class="note" x="196" y="92">return type ≠ header</text><text class="note" x="196" y="112">clash with libc header</text><text class="note" x="196" y="132">write to const input</text><text class="note" x="376" y="92">no extern &quot;C&quot; (mangled)</text><text class="note" x="376" y="112">function not defined</text><text class="note" x="376" y="132">static function</text><text class="note" x="376" y="152">param ≠ header (overload)</text><text class="note" x="556" y="92">type mismatch, no header</text><text class="note" x="556" y="112">lying pure</text><text class="note" x="556" y="132">output read before write</text><text class="note" x="556" y="152">signed overflow (UB)</text>
+<path class="e" d="M16,196 H704" marker-end="url(#ah)"/><text class="note" x="16" y="216">cheap to find</text><text class="note" x="704" y="216" text-anchor="end">expensive to find</text>
+<text class="note" x="16" y="236">Goal of every rule in this step: move bugs to the left.</text>
+</svg>
+<figcaption><b>Fig. 0.7</b> The generated header moves "type mismatch" from column 4 to column 2. <code>extern "C"</code> fixes column 3. Column 4 has no tool support at all, only discipline and self-checking tests.</figcaption>
+</figure>
+<p>Column 4 deserves the respect. A wrong value from a golden model does not crash anything. It shows up as a <b>DUT mismatch</b>, and the natural reaction is to debug the RTL. Before you open the waveform, make the model prove itself. Run the C function standalone against known vectors (the CRC-32 check value of <code>"123456789"</code> is <code>0xCBF43926</code>; factorials are in every table), and check the generated header against your C prototypes. Steps 06 and 08 build this into the flow: the golden model gets its own self-test before it judges the DUT.</p>
+<p><b>Imported tasks.</b> Everything so far imported <em>functions</em>. You can also write <code>import "DPI-C" task t(...)</code>. In C it is a function returning <code>int</code> (0 normally, 1 if the SV side disabled the task while it was inside an exported task; the "disable protocol" of §35.9). An imported task may call exported SV tasks that consume time, which is how C code can wait for clock edges. That needs <code>context</code> and exports, so it waits for <a href="../05_export_and_context/guide.html">step 05</a>. For pure computation, which is every golden model, use functions.</p>
+
+<!-- 0.16 -->
+<h3 id="r-recipe"><span class="no">0.16</span>Recipe: a new import, first time right</h3>
+<ol>
+<li>Write the SV import in a package. Default to no property; add <code>pure</code> only for true functions.</li>
+<li>Build once. Open <code>V&lt;top&gt;__Dpi.h</code> and copy the prototype into your C file as the definition's signature.</li>
+<li>In the C file, <code>#include "V&lt;top&gt;__Dpi.h"</code> (Verilator) or the vendor's header, so the compiler checks both sides and gives C linkage.</li>
+<li>Write every <code>output</code> on every path. Use unsigned arithmetic for anything that may wrap.</li>
+<li>On a link error, read the wrapper name in "referenced from": it names the SV scope and the SV function.</li>
+</ol>
+<p>Next, <a href="../02_data_types/guide.html">step 02</a> does the same for every type: vectors wider than 64 bits, 4-state values, strings, and the <code>svBitVecVal</code> word layout.</p>
+
+<!-- §1 -->
+<h2 id="s1"><span class="no">§1 · Objectives</span>What you can do after this step</h2>
+<ul>
+<li>Explain what DPI is (a calling convention plus a type mapping) and when VPI is still the right tool.</li>
+<li>Write an <code>import "DPI-C"</code> with the right property (<code>pure</code> or none), an optional c_name, and <code>input</code>/<code>output</code> <code>int</code> arguments.</li>
+<li>Build SV + C with Verilator, and know that <code>.c</code> files are compiled as C++.</li>
+<li>Use <code>V&lt;top&gt;__Dpi.h</code> to get C linkage and compile-time type checking, and know its blind spot (overloads).</li>
+<li>Diagnose from the exact message: mangled name, missing symbol, <code>static</code> symbol, keyword clash, duplicate signature, libc prototype clash.</li>
+<li>Predict what a type mismatch that links does at the ABI level.</li>
+<li>Decide when <code>pure</code> is legal, and why a lying <code>pure</code> is a latent bug even when today's simulator is unaffected.</li>
+</ul>
+<p>Prerequisites: SV functions and packages; C compilation and linking. Nothing from other steps.</p>
+
+<!-- §2 -->
+<h2 id="s2"><span class="no">§2 · Exercises</span>12 graded exercises, with solutions</h2>
+<p>★ basic · ★★ intermediate · ★★★ real-world. Every code solution is in <code>lab/ex/</code> (or the lab root) and is built, run and asserted by <code>check.py</code>.</p>
+
+<div class="q">
+<p><span class="n">E1 ★</span><b>Ex. 12.1 (book).</b> Write a C function <code>shift_c</code> with a 32-bit unsigned input <code>i</code> and an integer shift amount <code>n</code>: <code>n &gt; 0</code> shifts left, <code>n &lt; 0</code> shifts right, <code>n == 0</code> returns <code>i</code>. Write a self-checking SV module that tests each feature, including the corners.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="k">import</span> "DPI-C" <span class="k">pure function int unsigned</span> shift_c(<span class="k">input int unsigned</span> i, <span class="k">input int</span> n);
+<span class="c">// t(i, n, expected) calls shift_c, prints, compares (ex/ex1_shift.sv)</span>
+t(32'h0000_00F0,   4, 32'h0000_0F00);   t(32'h0000_00F0, -4, 32'h0000_000F);
+t(32'h0000_00F0,   0, 32'h0000_00F0);   t(32'h8000_0001,  1, 32'h0000_0002);
+t(32'h8000_0001,  -1, 32'h4000_0000);   <span class="c">// logical shift: the type is unsigned</span>
+t(32'hFFFF_FFFF,  32, 32'h0000_0000);   t(32'hFFFF_FFFF, -40, 32'h0000_0000);</code></pre>
+<pre class="cc"><code><span class="k">#include</span> "Vtop__Dpi.h"
+<span class="k">unsigned int</span> shift_c(<span class="k">unsigned int</span> i, <span class="k">int</span> n) {
+  <span class="k">if</span> (n &gt;= 32 || n &lt;= -32) <span class="k">return</span> 0;       <span class="c">/* x &lt;&lt; 32 is undefined behavior in C */</span>
+  <span class="k">return</span> n &gt; 0 ? i &lt;&lt; n : n &lt; 0 ? i &gt;&gt; -n : i;
+}</code></pre>
+<p>Output: 7 <code>LOG shift</code> lines, then <code>PASS ex1</code>. Lessons: <code>int unsigned</code> maps to <code>unsigned int</code> (check the header), which makes <code>&gt;&gt;</code> logical. Without the clamp, a shift by 32 is undefined behavior in C; on x86 it typically gives back <code>i</code> (the shift instruction masks the count to 5 bits), while SV's <code>&lt;&lt;</code> gives 0. A golden model has to define those corners explicitly.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E2 ★</span>Predict. <code>factorial64</code> returns <code>longint</code> and computes in <code>unsigned long long</code>. What does SV print for 13!, 20! and 21!? (21! = 51090942171709440000.)</p>
+<details><summary>Show solution</summary><div class="a">
+<p><code>LOG fact64 f13=6227020800 f20=2432902008176640000 f21=-4249290049419214848</code>. 20! fits in 63 bits. For 21!: $51090942171709440000 \bmod 2^{64} = 14197454024290336768$, which is above $2^{63}$, so read as signed it is $14197454024290336768 - 2^{64} = -4249290049419214848$. The C code multiplies in <code>unsigned long long</code> (wrap is defined) and casts at the end; doing the loop in <code>long long</code> would be signed overflow, i.e. undefined behavior (0.13).</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E3 ★</span>Find the bug. A colleague's C library has <code>int expect(void)</code>. They write <code>import "DPI-C" function int expect();</code> and get <code>syntax error, unexpected expect</code>. Fix it without touching the C code.</p>
+<details><summary>Show solution</summary><div class="a">
+<p><code>import "DPI-C" \expect = function int fexpect();</code>. <code>expect</code> is an SV keyword (property expect statements), so it cannot be the SV name, and as a c_name it must be written as an escaped identifier (backslash, name, then whitespace). The linker symbol is still <code>expect</code>. In the lab: <code>keyword.sv</code> fails, <code>hello.sv</code> prints <code>LOG rename fexpect=42</code>.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E4 ★★</span>Find the bug. <code>verilator --binary hello.sv noextern.c</code> fails with <code>Undefined symbols … "_factorial"</code>, yet <code>noextern.c</code> clearly defines <code>int factorial(const int i)</code>. Explain with one command, and give two fixes.</p>
+<details><summary>Show solution</summary><div class="a">
+<p><code>nm build/vl_noextern/noextern.o</code> shows <code>T __Z9factoriali</code>: Verilator compiled the <code>.c</code> as C++ and the name got mangled. Fix 1: wrap the definitions in <code>#ifdef __cplusplus extern "C" { … } #endif</code>. Fix 2 (preferred): <code>#include "Vtop__Dpi.h"</code> at the top. The header's <code>extern "C"</code> declarations give the later definitions C linkage and also type-check them. Both fixes are in the lab (<code>hello.c</code>, <code>hdr.c</code>), with identical output.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E5 ★★</span>Find the bug. To avoid writing C, someone imports libc directly: <code>import "DPI-C" pure strlen = function longint unsigned c_strlen(input string s);</code>. The build fails in C++ compilation. Why, and what is the smallest fix?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>Verilator declares <code>extern "C" unsigned long long strlen(const char* s)</code>, and the system header already declares <code>size_t strlen(const char*)</code> with <code>size_t</code> = <code>unsigned long</code>. Same width, different C++ type, and the two declarations collide: <code>functions that differ only in their return type cannot be overloaded</code>. No SV type produces <code>unsigned long</code>. Fix: a wrapper (<code>ex/ex5_fix.c</code>):</p>
+<pre class="cc"><code><span class="k">#include</span> &lt;string.h&gt;
+<span class="k">#include</span> "Vtop__Dpi.h"
+<span class="k">long long</span> c_strlen(<span class="k">const char</span>* s) { <span class="k">return</span> (<span class="k">long long</span>)strlen(s); }</code></pre>
+<p>with <code>import "DPI-C" pure function longint c_strlen(input string s);</code> → <code>LOG strlen empty=0 hello=5 len=5</code>.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E6 ★★</span>Write <code>gcd(a, b, steps)</code>: return the GCD (Euclid) and report the number of loop iterations through an <code>output int</code>. Predict the result for (1071, 462), (17, 5) and (8, 0). Is it legal to declare it <code>pure</code>?</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="cc"><code><span class="k">int</span> gcd(<span class="k">int</span> a, <span class="k">int</span> b, <span class="k">int</span>* steps) {
+  *steps = 0;                          <span class="c">/* output: starts undefined, write it first */</span>
+  <span class="k">while</span> (b != 0) { <span class="k">int</span> t = a % b; a = b; b = t; (*steps)++; }
+  <span class="k">return</span> a;
+}</code></pre>
+<p>1071, 462 → 21 in 3 steps (1071 mod 462 = 147, 462 mod 147 = 21, 147 mod 21 = 0). 17, 5 → 1 in 3 steps. 8, 0 → 8 in 0 steps. Not <code>pure</code>: pure functions cannot have <code>output</code> or <code>inout</code> arguments (§35.5.2). If you want it pure, return the steps from a second function, or pack both into a <code>longint</code>.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E7 ★★</span>Convert −3 dB to a linear gain with libm (no C file): import <code>pow</code> and <code>log10</code>, compute $10^{-3/20}$, compare with SV's own <code>10.0 ** (-3.0/20.0)</code>, and convert back to dB. Are the two results bit-identical?</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="k">import</span> "DPI-C" <span class="k">pure function real</span> pow(<span class="k">input real</span> x, <span class="k">input real</span> y);
+<span class="k">import</span> "DPI-C" <span class="k">pure function real</span> log10(<span class="k">input real</span> x);
+<span class="k">real</span> c = pow(10.0, -3.0 / 20.0), s = 10.0 ** (-3.0 / 20.0);
+<span class="c">// LOG db c=0.7079457844 sv=0.7079457844 same=1 back=-3.000000</span></code></pre>
+<p>Bit-identical in Verilator (<code>c == s</code> is 1), because its <code>**</code> on reals calls the same libm <code>pow</code>. Do not assume that across simulators. Floating-point golden models compare with a tolerance unless you control both implementations. Step 06 returns to this.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E8 ★★</span>Predict. SV: <code>import "DPI-C" function longint negate(input longint v);</code>. C: <code>extern "C" int negate(int v) { return -v; }</code>. It links. What does <code>negate(64'h1_0000_0005)</code> return on x86-64?</p>
+<details><summary>Show solution</summary><div class="a">
+<p><b>4294967291</b> (<code>LOG mismatch v=4294967301 negate=4294967291</code>). The argument goes in <code>rdi</code>; C reads <code>edi</code> = 5, returns −5 in <code>eax</code> = <code>0xFFFFFFFB</code>; writing <code>eax</code> zeroes the top half of <code>rax</code>; SV reads <code>rax</code> = 0x00000000FFFFFFFB (Fig. 0.6). It is undefined behavior, so other ABIs (or optimization levels) may differ. Including <code>Vtop__Dpi.h</code> turns it into a compile error.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E9 ★★★</span>Find the bug. Same mismatch as E8, but now the C file starts with <code>#include "Vtop__Dpi.h"</code> and defines <code>int negate(int v)</code> (no <code>extern "C"</code>). It compiles. Why, and what happens at link?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>The header declares <code>extern "C" long long negate(long long)</code>. A definition with a <em>different parameter list</em> is, in C++, a different function: a legal overload with C++ linkage and a mangled name. So it compiles, and the C-linkage <code>negate</code> stays undefined: <code>Undefined symbols … "_negate"</code> (<code>mismatch_hdr2.c</code>). When only the return type differs, C++ cannot overload and you get the clean compile error (<code>mismatch_hdr.c</code>). Lesson: the header is a strong check, not a complete one. Copy prototypes from it verbatim.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E10 ★★★</span>Predict. <code>ping(x)</code> returns <code>x</code> and increments a C static counter, but is imported as <code>pure</code>. How many calls does each statement make in Verilator 5.052, and how many could a standard-conforming simulator make? <code>void'(ping(1));</code>, <code>y = ping(2) + ping(2);</code>, a loop of 4 <code>y += ping(3)</code>.</p>
+<details><summary>Show solution</summary><div class="a">
+<p>Verilator: 1, 2, 4. It executes every call (<code>LOG pure case=… calls=…</code>). A conforming simulator may legally make 0, 1 and 1: drop the unused call, share the common subexpression, hoist the loop-invariant call. The C code breaks the <code>pure</code> contract (static state), so both answers are "correct" and the program's behavior is simulator-dependent. Remove <code>pure</code> or remove the side effect.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E11 ★★★</span>Your first golden model: check SV's <code>$countones</code> against a C popcount on 10,000 values, corners (0 and all-ones) first. Why can't you import <code>__builtin_popcount</code> directly the way you imported <code>pow</code>?</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="cc"><code><span class="k">#include</span> "Vtop__Dpi.h"
+<span class="k">int</span> popcount32(<span class="k">unsigned int</span> x) { <span class="k">return</span> __builtin_popcount(x); }</code></pre>
+<pre class="sv"><code><span class="k">import</span> "DPI-C" <span class="k">pure function int</span> popcount32(<span class="k">input int unsigned</span> x);
+<span class="k">for</span> (<span class="k">int</span> k = 0; k &lt; 10000; k++) <span class="k">begin</span>
+  x = (k &lt; 2) ? (k == 0 ? 32'h0 : 32'hFFFF_FFFF) : $urandom;
+  <span class="k">if</span> (popcount32(x) != $countones(x)) errors++;
+<span class="k">end</span>   <span class="c">// LOG popcount n=10000 errors=0 / PASS ex11</span></code></pre>
+<p><code>__builtin_popcount</code> is a compiler intrinsic. It becomes a <code>popcnt</code> instruction or an inline sequence, and there is no symbol in any library for the linker to find. Anything that is a macro, an intrinsic or an inline-only function needs a real C function around it.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E12 ★★</span>Find the bug. A C file wraps everything in <code>extern "C" { … }</code> but declares <code>static int factorial(const int i)</code> ("it's a helper, keep it private"). The link fails on <code>_factorial</code>. Why does <code>extern "C"</code> not help?</p>
+<details><summary>Show solution</summary><div class="a">
+<p><code>static</code> at file scope means internal linkage: the symbol never leaves the object file, whatever its language linkage. <code>extern "C"</code> controls the <em>name</em> (no mangling), not the <em>visibility</em>. The generated wrapper in <code>Vtop__ALL.o</code> needs an external <code>_factorial</code>, so the link fails (<code>ex/ex12_static.c</code>). Helpers can be <code>static</code>; DPI entry points cannot.</p>
+</div></details>
+</div>
+
+<!-- §3 -->
+<h2 id="s3"><span class="no">§3 · Quiz</span>14 questions, self-grading</h2>
+<p>Pick an answer and press <b>Check</b>. The explanation covers the right answer and the tempting wrong one.</p>
+<p class="quiz-score"></p>
+
+<div class="quiz" data-answer="c">
+<p class="qq">1. During a DPI import call, what happens to simulation time and to other SV processes?</p>
+<label><input type="radio" value="a"> Time advances by one delta; other processes run in parallel on other threads.</label>
+<label><input type="radio" value="b"> The C function runs in a separate process and the simulator waits for a reply message.</label>
+<label><input type="radio" value="c"> The simulator's thread executes the C code; no time passes and no other SV process runs until it returns.</label>
+<label><input type="radio" value="d"> It depends on whether the import is <code>pure</code>.</label>
+<div class="why">(c) An import is a plain function call in the same process and thread (Fig. 0.3). (b) describes socket co-simulation (the <code>../sockets_dpi</code> examples in this repo), which you would build on top of DPI. <code>pure</code> only licenses optimizations; it does not change the execution model.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">2. In Verilator, which compiler compiles <code>model.c</code> given on the command line?</p>
+<label><input type="radio" value="a"> The C compiler (<code>$(CC)</code>), because of the <code>.c</code> extension.</label>
+<label><input type="radio" value="b"> The C++ compiler (<code>$(CXX)</code>).</label>
+<label><input type="radio" value="c"> Verilator's own front end.</label>
+<label><input type="radio" value="d"> Whichever <code>-CFLAGS</code> selects.</label>
+<div class="why">(b) The generated <code>Vtop.mk</code> rule is <code>$(CXX) … -c -o model.o model.c</code>, and clang warns "treating 'c' input as 'c++'". That is why C linkage must be explicit. Commercial simulators do compile <code>.c</code> as C, which is why code that "worked in Questa" can fail to link in Verilator.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+<p class="qq">3. The link fails with <code>Undefined symbols: "_factorial"</code>, and <code>nm model.o</code> shows <code>T __Z9factoriali</code>. The cause is:</p>
+<label><input type="radio" value="a"> <code>model.o</code> was not passed to the linker.</label>
+<label><input type="radio" value="b"> The SV import uses <code>int</code> but C uses <code>const int</code>.</label>
+<label><input type="radio" value="c"> <code>factorial</code> is declared <code>static</code>.</label>
+<label><input type="radio" value="d"> The function was compiled with C++ linkage (name mangled).</label>
+<div class="why">(d) <code>__Z9factoriali</code> is the Itanium C++ mangling of <code>factorial(int)</code>. The object is present (a is wrong) and the symbol is global (<code>T</code>, so c is wrong; a static would show <code>t</code> or nothing). <code>const</code> on a by-value parameter is not part of the function type, so (b) changes nothing.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">4. What does including <code>Vtop__Dpi.h</code> in your C file give you?</p>
+<label><input type="radio" value="a"> C linkage for the matching definitions, plus a compile-time check of the return type and parameter types.</label>
+<label><input type="radio" value="b"> Faster calls, because the wrapper is inlined into your C.</label>
+<label><input type="radio" value="c"> Automatic conversion if the C types differ from the SV types.</label>
+<label><input type="radio" value="d"> Nothing; it is for Verilator's internal use only.</label>
+<div class="why">(a) The header holds <code>extern "C"</code> prototypes generated from the SV imports; the generated file even says "Manually include this file…". It converts nothing (c): a mismatch is either a compile error or, if the parameters differ, a silent C++ overload (Q5).</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">5. With the header included, you define <code>int negate(int v)</code> (no <code>extern "C"</code>) while the header says <code>long long negate(long long v)</code>. Result?</p>
+<label><input type="radio" value="a"> Compile error: conflicting declaration.</label>
+<label><input type="radio" value="b"> Builds and runs, returning a truncated value.</label>
+<label><input type="radio" value="c"> Compiles (a new C++ overload), then fails to link on <code>_negate</code>.</label>
+<label><input type="radio" value="d"> Verilator detects it at elaboration.</label>
+<div class="why">(c) Different parameter types mean a legal overload in C++, with its own mangled name, so the C-linkage <code>negate</code> is never defined. (a) is what you get when <em>only the return type</em> differs, or when the definition is inside <code>extern "C"</code>. Verilator never sees C (d).</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">6. SV imports <code>function longint f(input longint v)</code>, C defines <code>extern "C" int f(int v)</code>, no header. What is guaranteed?</p>
+<label><input type="radio" value="a"> A link error.</label>
+<label><input type="radio" value="b"> Nothing: it links, and the behavior is undefined (on x86-64 the arguments get truncated and the result zero-extended).</label>
+<label><input type="radio" value="c"> SV converts the value to 32 bits before the call, so the result is correct for small values.</label>
+<label><input type="radio" value="d"> A run-time error from the DPI layer.</label>
+<div class="why">(b) C symbols carry no types, so the link succeeds. The lab measured <code>negate(0x1_0000_0005) = 4294967291</code>. (c) is tempting, but SV converts to the type in <em>its own</em> prototype (<code>long long</code>); it cannot know C expects 32 bits. There is no run-time type check in DPI (d).</div>
+</div>
+
+<div class="quiz" data-answer="a,c">
+<p class="qq">7. Which of these may legally be declared <code>pure</code>? (select all)</p>
+<label><input type="checkbox" value="a"> <code>function int crc8(input int data)</code>, computed from <code>data</code> only.</label>
+<label><input type="checkbox" value="b"> <code>function int next_id()</code>, which returns a C static counter and increments it.</label>
+<label><input type="checkbox" value="c"> <code>function real sin(input real x)</code> from libm.</label>
+<label><input type="checkbox" value="d"> <code>function int gcd(input int a, b, output int steps)</code>.</label>
+<div class="why">(a) and (c). (b) has state, so the result depends on more than the inputs. (d) has an <code>output</code> argument, which §35.5.2 forbids for pure functions. libm functions are pure as long as you ignore <code>errno</code>, which simulators conventionally do.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">8. In Verilator 5.052, <code>y = ping(2) + ping(2)</code> with a side-effecting <code>pure</code> <code>ping</code> calls C:</p>
+<label><input type="radio" value="a"> once (common-subexpression elimination).</label>
+<label><input type="radio" value="b"> twice.</label>
+<label><input type="radio" value="c"> zero times; the result is constant-folded at compile time.</label>
+<label><input type="radio" value="d"> It does not compile: <code>pure</code> functions cannot be called twice in one expression.</label>
+<div class="why">(b), measured. The LRM would also allow (a). Today's behavior is the trap: the lying <code>pure</code> passes every test until a tool starts optimizing.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+<p class="qq">9. <code>import "DPI-C" function int expect();</code> fails with "syntax error, unexpected expect". The correct import is:</p>
+<label><input type="radio" value="a"> <code>import "DPI-C" function int \expect ();</code></label>
+<label><input type="radio" value="b"> <code>import "DPI-C" expect = function int fexpect();</code></label>
+<label><input type="radio" value="c"> <code>import "DPI-C" "expect" = function int fexpect();</code></label>
+<label><input type="radio" value="d"> <code>import "DPI-C" \expect = function int fexpect();</code></label>
+<div class="why">(d), Sample 12.3. (b) fails in Verilator with the same syntax error, because the lexer sees the keyword. (a) is legal SV, but it uses an escaped identifier as the SV name, which is legal and unreadable at every call site. The c_name is an identifier, not a string (c).</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">10. Two packages import the C function <code>twice</code>, one as <code>int twice(int)</code> and one as <code>real twice(real)</code>. What happens?</p>
+<label><input type="radio" value="a"> Fine: each package has its own namespace.</label>
+<label><input type="radio" value="b"> The simulator picks the right one from the argument type (overloading).</label>
+<label><input type="radio" value="c"> Error: one C symbol can have only one SV signature in the whole design.</label>
+<label><input type="radio" value="d"> It links, and whichever package compiles last wins.</label>
+<div class="why">(c). Verilator: <code>Duplicate declaration of DPI function with different signature: 'twice'</code>. SV names are scoped; C names are global (0.9). SV has no routine overloading (b).</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">11. <code>import "DPI-C" function int addmul(input int a, b, output int sum);</code>. What does C receive for <code>sum</code>, and what is <code>*sum</code> on entry in Verilator?</p>
+<label><input type="radio" value="a"> An <code>int</code> by value, holding the SV variable's current value.</label>
+<label><input type="radio" value="b"> An <code>int*</code> to a wrapper temporary whose initial content is undefined.</label>
+<label><input type="radio" value="c"> An <code>int*</code> pointing directly at the SV variable.</label>
+<label><input type="radio" value="d"> An <code>int&amp;</code>, because the file is compiled as C++.</label>
+<div class="why">(b). The generated wrapper declares <code>int sum__Vcvt;</code>, passes <code>&amp;sum__Vcvt</code>, and copies it back after the call. Pointing at the SV variable (c) is an implementation choice the standard allows, so never rely on either. DPI is a C interface, so there are no references (d).</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">12. Why does <code>import "DPI-C" pure function real sin(input real x);</code> work with no C file, while importing <code>strlen</code> as <code>longint unsigned</code> fails to compile?</p>
+<label><input type="radio" value="a"> Verilator's prototype for <code>sin</code> (<code>double sin(double)</code>) is identical to <code>&lt;math.h&gt;</code>'s; for <code>strlen</code> it emits <code>unsigned long long</code>, while <code>&lt;string.h&gt;</code> says <code>size_t</code> = <code>unsigned long</code>.</label>
+<label><input type="radio" value="b"> libm is linked by default and libc is not.</label>
+<label><input type="radio" value="c"> String arguments cannot be passed to library functions.</label>
+<label><input type="radio" value="d"> <code>strlen</code> is a compiler builtin with no symbol.</label>
+<div class="why">(a). Both libraries are linked (b is wrong; <code>access</code> from libc works). Strings pass fine as <code>const char*</code> (c). Compilers do treat <code>strlen</code> specially, but a real libc symbol exists; the error is the C++ type clash.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">13. A golden model computes 21! with signed <code>long long</code> arithmetic and matches the RTL in your simulator today. What is the real risk?</p>
+<label><input type="radio" value="a"> None: two's complement wrap is guaranteed by the C standard.</label>
+<label><input type="radio" value="b"> SV <code>longint</code> is 128 bits on some simulators.</label>
+<label><input type="radio" value="c"> Signed overflow is undefined behavior; an optimizing compiler may break the "expected" wrap. Compute in <code>unsigned long long</code>.</label>
+<label><input type="radio" value="d"> DPI saturates overflowing values.</label>
+<div class="why">(c). Only unsigned arithmetic wraps by definition (C11 6.2.5p9). Optimizers do exploit signed-overflow UB (loop and comparison transformations). <code>longint</code> is always 64 bits (b), and DPI does no arithmetic at all (d).</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">14. You need C to inspect arbitrary signals of the DUT by hierarchical name at run time, without passing them as arguments. Which interface?</p>
+<label><input type="radio" value="a"> DPI with a <code>pure</code> import.</label>
+<label><input type="radio" value="b"> VPI (or a DPI import that receives values explicitly). DPI alone gives C no access to objects it was not passed.</label>
+<label><input type="radio" value="c"> DPI with <code>c_name</code> renaming.</label>
+<label><input type="radio" value="d"> Any import; <code>svdpi.h</code> has <code>svGetSignalByName</code>.</label>
+<div class="why">(b). DPI is deliberately non-reflective (Fig. 0.1). <code>context</code> imports (step 05) let C call <em>exported SV functions</em> in a scope, but not walk the hierarchy. There is no <code>svGetSignalByName</code> in <code>svdpi.h</code> (d).</div>
+</div>
+
+<!-- §4 -->
+<h2 id="s4"><span class="no">§4 · Lab</span>Run it, break it, read the messages</h2>
+<p>Everything above comes from <code>tutorial/01_first_call/lab/</code>. One command builds about 20 small experiments in parallel, runs them, and asserts 46 facts:</p>
+<pre class="sh"><code>$ cd tutorial/01_first_call/lab
+$ python3 check.py          <span class="c"># ~3 s with ccache warm, ~1–2 min cold</span>
+check.py: 46 checks passed
+$ bash run.sh                <span class="c"># just build + run; logs in build/</span></code></pre>
+<p><b>Before running, predict:</b> (1) what <code>factorial(13)</code> prints; (2) which builds fail and at which stage (Verilator, C++ compile, or link); (3) the value <code>negate</code> returns; (4) the call counts in <code>pure.log</code>. Then compare with the table.</p>
+<div class="tbl"><table>
+<tr><th>Experiment</th><th>Files</th><th>Stage</th><th>Result (measured)</th></tr>
+<tr><td>first imports</td><td class="mono">hello.sv + hello.c</td><td>runs</td><td><code>f13=1932053504</code>, <code>sin30=0.500000</code>, <code>fexpect=42</code>, <code>access sv=0 none=-1</code>, <code>p=42 s=13</code></td></tr>
+<tr><td>generated header instead of <code>extern "C"</code></td><td class="mono">hello.sv + hdr.c</td><td>runs</td><td>same log as <code>hello</code></td></tr>
+<tr><td>no <code>extern "C"</code></td><td class="mono">noextern.c</td><td>link</td><td><code>Undefined symbols "_addmul" "_expect" "_factorial"</code>; <code>nm</code>: <code>__Z9factoriali</code></td></tr>
+<tr><td>symbol missing</td><td class="mono">missing.c</td><td>link</td><td>only <code>"_addmul"</code> undefined</td></tr>
+<tr><td><code>static</code> definition</td><td class="mono">ex/ex12_static.c</td><td>link</td><td><code>"_factorial"</code> undefined</td></tr>
+<tr><td>type mismatch, no header</td><td class="mono">mismatch.sv/.c</td><td>runs (wrong)</td><td><code>negate=4294967291</code> (expected −4294967301)</td></tr>
+<tr><td>type mismatch, header</td><td class="mono">mismatch_hdr.c</td><td>C++ compile</td><td><code>functions that differ only in their return type cannot be overloaded</code></td></tr>
+<tr><td>mismatch, header, no <code>extern "C"</code></td><td class="mono">mismatch_hdr2.c</td><td>link</td><td><code>"_negate"</code> undefined (C++ overload)</td></tr>
+<tr><td>keyword as SV name</td><td class="mono">keyword.sv</td><td>Verilator</td><td><code>syntax error, unexpected expect</code></td></tr>
+<tr><td><code>import "DPI"</code></td><td class="mono">legacy.sv</td><td>Verilator</td><td><code>Unsupported DPI type 'DPI': Use 'DPI-C'</code></td></tr>
+<tr><td>same C name, two signatures</td><td class="mono">dup.sv</td><td>Verilator</td><td><code>Duplicate declaration of DPI function with different signature: 'twice'</code></td></tr>
+<tr><td>libc <code>strlen</code> imported directly</td><td class="mono">ex/ex5_strlen.sv</td><td>C++ compile</td><td>clash with <code>size_t strlen</code> from <code>&lt;string.h&gt;</code></td></tr>
+<tr><td>lying <code>pure</code></td><td class="mono">pure.sv/.c</td><td>runs</td><td>calls: unused=1, twice=2, loop4=4 (no elimination)</td></tr>
+<tr><td>import in <code>always_comb</code>/<code>assign</code></td><td class="mono">comb.sv + pure.c</td><td>runs</td><td>2 calls at t=0, then 1 per change per site: 22 total</td></tr>
+<tr><td><code>ref</code> argument (illegal)</td><td class="mono">ref.sv</td><td>link</td><td>accepted silently as <code>int*</code>; only <code>"_bump"</code> undefined</td></tr>
+<tr><td>imports in a package</td><td class="mono">pkg.sv/.c</td><td>runs</td><td><code>top.c1</code>, <code>top.c2</code>: 720; <code>top</code>: 5040</td></tr>
+</table></div>
+<p><b>Where to look.</b> <code>build/&lt;name&gt;.build</code> holds the full Verilator + make + compiler + linker output; <code>build/&lt;name&gt;.log</code> holds the simulation output. Open <code>build/vl_hello/Vtop__Dpi.h</code> (0.6) and search <code>build/vl_hello/Vtop___024root__0.cpp</code> for <code>Vdpiimwrap</code> to see the wrappers (0.3). Try it yourself: add <code>import "DPI-C" function shortint f(input byte b, input real r);</code> to a file, build, and read what C types the header gives you. That is the start of <a href="../02_data_types/guide.html">step 02</a>.</p>
+<div class="callout note" style="--c-label:'Build notes'"><p><code>run.sh</code> sources <code>../../common/lab.sh</code>, which defines <code>vlb</code> (background build with <code>verilator --binary -j 2 --timing --assert</code> into <code>build/vl_&lt;name&gt;</code>) and <code>vlr</code> (run). Run it with <code>bash</code>; the helpers rely on bash word splitting. With <code>ccache</code> installed, a rebuild takes seconds. The clang warning <code>treating 'c' input as 'c++'</code> only appears on a cache miss.</p></div>
+
+<!-- §5 -->
+<h2 id="s5"><span class="no">§5 · Cheat sheet</span>Step 01 on one screen</h2>
+<div class="tbl"><table>
+<tr><th>Construct</th><th>SV declaration</th><th>C side (as in V&lt;top&gt;__Dpi.h)</th><th>Pitfall</th></tr>
+<tr><td>basic import</td><td class="mono">import "DPI-C" function int f(input int a);</td><td class="mono">int f(int a);</td><td>C linkage required in Verilator</td></tr>
+<tr><td>pure</td><td class="mono">import "DPI-C" pure function real g(input real x);</td><td class="mono">double g(double x);</td><td>no state, no I/O, no outputs; calls may be skipped</td></tr>
+<tr><td>rename</td><td class="mono">import "DPI-C" c_fn = function int sv_fn();</td><td class="mono">int c_fn();</td><td>keyword c_name must be escaped: <code>\expect =</code></td></tr>
+<tr><td>output int</td><td class="mono">output int s</td><td class="mono">int* s</td><td>initial value undefined; always write</td></tr>
+<tr><td>inout int</td><td class="mono">inout int s</td><td class="mono">int* s</td><td>holds SV value on entry, copied back</td></tr>
+<tr><td>int unsigned</td><td class="mono">input int unsigned u</td><td class="mono">unsigned int u</td><td>use it to get logical <code>&gt;&gt;</code></td></tr>
+<tr><td>longint</td><td class="mono">longint</td><td class="mono">long long</td><td>not <code>int64_t</code>/<code>long</code>; signed overflow is UB</td></tr>
+<tr><td>longint unsigned</td><td class="mono">longint unsigned</td><td class="mono">unsigned long long</td><td>not <code>size_t</code> (<code>unsigned long</code>)</td></tr>
+<tr><td>string input</td><td class="mono">input string s</td><td class="mono">const char* s</td><td>(details in step 02/04)</td></tr>
+<tr><td>libm direct</td><td class="mono">import "DPI-C" pure function real pow(input real x, y);</td><td>none: libm</td><td>prototype must equal the system header's</td></tr>
+</table></div>
+<p><b>Rules of thumb</b></p>
+<ol>
+<li>DPI = C calling convention + type mapping. Same process, same thread, zero simulation time.</li>
+<li>The simulator never sees C. Only the C/C++ compiler can compare both sides, and only if you <code>#include</code> the generated prototype header.</li>
+<li>Verilator compiles <code>.c</code> as C++: use <code>extern "C"</code> or the header. Commercial tools compile <code>.c</code> as C; <code>#ifdef __cplusplus</code> keeps one source portable.</li>
+<li>Link errors name the symbol; the "referenced from" wrapper names the SV scope and function.</li>
+<li>One C symbol, one SV signature, design-wide. SV names are scoped, C names are global.</li>
+<li><code>pure</code> is a promise the tool may exploit. Never lie, even if today's simulator doesn't care.</li>
+<li>Outputs are write-only on entry. Unsigned arithmetic for anything that wraps.</li>
+<li>Keep imports in one package; copy C prototypes from the header, never retype them.</li>
+</ol>
+<div class="steps"><a href="../index.html">← Tutorial index</a><a href="../02_data_types/guide.html">Next: 02 · Data types →</a></div>
+</main>
+</div>
+</body>
+</html>

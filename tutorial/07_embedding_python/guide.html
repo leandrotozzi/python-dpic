@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Step 07: Embedding Python</title>
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../assets/guide.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/contrib/auto-render.min.js"></script>
+<script defer src="../assets/quiz.js"></script>
+<script>
+try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
+document.addEventListener('DOMContentLoaded',function(){
+  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
+  var toc=document.getElementById('toc');
+  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
+  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
+  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
+  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
+});
+function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
+function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
+</script>
+<style>
+/* local tweaks: code blocks */
+pre.sv{font-size:13px;line-height:1.5}
+pre.sv .c{color:var(--muted);font-style:italic}
+pre.sv .k{color:var(--acc);font-weight:600}
+p code,li code,td code{overflow-wrap:anywhere}
+td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
+.steps{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-family:var(--font-mono);font-size:12.5px;margin-top:8px}
+</style>
+</head>
+<body>
+<svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-acc" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-2" d="M0,1 L10,5 L0,9 z"/></marker>
+</defs></svg>
+
+<div class="page">
+<details class="toc" id="toc"><summary>Contents</summary><nav><ol>
+<li class="grp">0 · Tutorial</li>
+<li><a href="#tutorial">The step in one idea</a></li>
+<li><a href="#r-why">0.1 Three ways to reach Python</a></li>
+<li><a href="#r-build">0.2 Building and linking</a></li>
+<li><a href="#r-life">0.3 Lifecycle</a></li>
+<li><a href="#r-config">0.4 Configuring the interpreter</a></li>
+<li><a href="#r-call">0.5 Calling and converting</a></li>
+<li><a href="#r-refs">0.6 Reference counting</a></li>
+<li><a href="#r-errors">0.7 Errors</a></li>
+<li><a href="#r-stdout">0.8 Two stdout buffers</a></li>
+<li><a href="#r-gil">0.9 The GIL and --threads</a></li>
+<li><a href="#r-ext">0.10 Extension modules (numpy)</a></li>
+<li><a href="#r-py2">0.11 What changed since Python 2</a></li>
+<li><a href="#r-recipe">0.12 Recipe: a robust bridge</a></li>
+<li class="grp">Practice</li>
+<li><a href="#s1">1 · Objectives</a></li>
+<li><a href="#s2">2 · Exercises</a></li>
+<li><a href="#s3">3 · Quiz</a></li>
+<li><a href="#s4">4 · Lab</a></li>
+<li><a href="#s5">5 · Cheat sheet</a></li>
+</ol></nav></details>
+
+<main>
+<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
+<div class="steps"><a href="../06_golden_model_c/guide.html">← 06 Golden model in C</a><a href="../08_python_golden_model/guide.html">08 Python golden model →</a></div>
+<p class="kicker">DPI-C tutorial · Part B · Step 07</p>
+<h1>Embedding Python in a SystemVerilog simulation</h1>
+<p class="deck">DPI gives you C. CPython is a C library. Link it into the simulator, start the interpreter once, and every Python function becomes callable from SystemVerilog at a cost of tens of nanoseconds. What makes or breaks it is the boring part: lifecycle, reference counts, errors, buffers and threads.</p>
+<p class="meta"><span>Prereqs: steps <a href="../01_first_call/guide.html">01</a>–<a href="../05_export_and_context/guide.html">05</a> (import/export, types, chandle, open arrays, context)</span><span>Measured on Verilator 5.052 + Python 3.14.7, macOS x86_64</span><span>Answers are hidden: think first</span></p>
+<div class="tools"><button onclick="setAll(true)">Open all</button><button onclick="setAll(false)">Close all</button></div>
+
+<h2 id="tutorial"><span class="no">§0 · Tutorial</span>The step, explained</h2>
+<p class="lead">Part A ended with a golden model written in C. C is fast and DPI speaks it natively, but C is a poor language for reference models: no big integers, no complex numbers, no numpy, no <code>zlib</code>, no quick prototyping. The model you trust most is often a Python script that the algorithm team already wrote. This step shows how to call it <em>in-process</em> from SystemVerilog: the simulator links <code>libpython</code>, your DPI C code owns an interpreter, and an SV function call becomes a Python function call.</p>
+<p>Nothing here is specific to Python: it is ordinary DPI-C (steps 01–05) plus the <b>CPython C API</b>, the same API every embedder uses (Blender, GDB, LibreOffice). The C API is large, but an embedder needs about twenty functions. The hard parts are elsewhere. One is the interpreter's <b>lifecycle</b>, which has to fit inside the simulator's lifecycle. Another is <b>ownership</b>: every <code>PyObject*</code> has a reference count, and a C bug there is a leak or a crash, never a compile error. The rest is <b>errors</b> that must reach the SV log, <b>two output buffers</b> fighting over the same file descriptor, and the <b>GIL</b> as soon as Verilator runs multithreaded. Every claim below is measured in the <a href="#s4">lab</a> and asserted by <code>check.py</code>.</p>
+
+<!-- 0.1 -->
+<h3 id="r-why"><span class="no">0.1</span>Three ways to reach Python from a testbench</h3>
+<p>Spear §12.9 ("Connecting Other Languages") shows the oldest way: a DPI wrapper around <code>system()</code> that runs a Perl script and returns its exit status (Samples 12.51–12.53). It works for anything with a command line, and it costs a <code>fork</code>+<code>exec</code>+interpreter start <em>per call</em>. The second way is a <b>socket</b>: a Python server process and a DPI client, as in this repo's <code>sockets_dpi/</code> and the AMIQ example in <code>amiq/</code>. The third is to <b>embed</b> the interpreter in the simulator process.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 260" role="img" aria-label="Three ways to call Python from SystemVerilog. Spawn: each DPI call forks a new python3 process, measured 41 milliseconds per call. Socket: a long-lived Python server process exchanges messages with a DPI client over a socket, costing a round trip per call. Embedded: libpython lives inside the simulator process and a DPI call is a C function call into the interpreter, measured 0.04 microseconds for a builtin.">
+<text class="ttl" x="10" y="20">(a) spawn per call — Spear §12.9</text>
+<rect class="box" x="10" y="34" width="140" height="44" rx="8"/><text class="lbl" x="80" y="56">simulator</text>
+<path class="e" d="M150,56 H250" marker-end="url(#ah)"/><text class="t mid" x="200" y="48">system()</text>
+<rect class="box soft" x="250" y="34" width="150" height="44" rx="8"/><text class="lbl" x="325" y="56">new python3</text>
+<text class="hotx" x="420" y="60">41 ms / call (fork + exec + startup)</text>
+<text class="ttl" x="10" y="108">(b) socket to a server process</text>
+<rect class="box" x="10" y="122" width="140" height="44" rx="8"/><text class="lbl" x="80" y="144">simulator</text>
+<path class="e" d="M150,138 H250" marker-end="url(#ah)"/><path class="e" d="M250,152 H150" marker-end="url(#ah)"/>
+<rect class="box soft" x="250" y="122" width="150" height="44" rx="8"/><text class="lbl" x="325" y="144">python server</text>
+<text class="note" x="420" y="148">a round trip + serialization per call</text>
+<text class="ttl" x="10" y="196">(c) embedded — this step</text>
+<rect class="ghost" x="10" y="206" width="400" height="48" rx="10"/>
+<rect class="box" x="20" y="212" width="120" height="36" rx="8"/><text class="lbl" x="80" y="230">SV + DPI C</text>
+<path class="e hot" d="M140,230 H250" marker-end="url(#ah-acc)"/><text class="t mid" x="195" y="223">C call</text>
+<rect class="box hot" x="250" y="212" width="150" height="36" rx="8"/><text class="lbl" x="325" y="230">libpython</text>
+<text class="hotx" x="420" y="234">0.04 µs / call (builtin abs)</text>
+</svg>
+<figcaption><b>Fig. 0.1</b>Three ways to reach Python. The two numbers are measured in exercise <a href="#e11">E11</a>, which ports Sample 12.52 to this machine: about a millionfold between spawning and embedding. Sockets sit in between and are the right choice only when the model must live in another process or on another machine.</figcaption>
+</figure>
+
+<p>Embedding wins on cost and on data types: arguments cross as C values and become Python objects without serialization. It loses on isolation: a crash in Python's C code is a crash of your simulator, and one process means one interpreter state shared by the whole testbench. For a golden model called millions of times per test, embedding is the default; the rest of this step makes it robust.</p>
+
+<!-- 0.2 -->
+<h3 id="r-build"><span class="no">0.2</span>Building and linking</h3>
+<p>The simulator executable must contain (or load) <code>libpython3.14</code>, and your DPI C file must see <code>Python.h</code>. Python ships the flags in <code>python3-config</code>, with one trap: since Python 3.8, <code>python3-config --ldflags</code> <b>omits</b> <code>-lpython3.X</code>, because extension modules must not link libpython (they get its symbols from the host process). An <em>embedder</em> must link it, and asks for it with <code>--embed</code>:</p>
+<pre class="sv"><code>$ python3-config --ldflags
+-L/usr/local/opt/python@3.14/.../config-3.14-darwin -ldl -framework CoreFoundation
+$ python3-config --embed --ldflags
+-L/usr/local/opt/python@3.14/.../config-3.14-darwin <span class="k">-lpython3.14</span> -ldl -framework CoreFoundation</code></pre>
+<p>Without <code>--embed</code> the link fails with <code>Undefined symbols for architecture x86_64: "_Py_Initialize"</code> (lab build <code>noembed</code>). The shared helper <code>common/lab.sh</code> wraps the right flags in <code>py_flags</code>, which turns each word into a Verilator <code>-CFLAGS</code> or <code>-LDFLAGS</code> argument:</p>
+<pre class="sv"><code><span class="c"># run.sh: build in the background, then run</span>
+vlb basic basic.sv basic.c $(py_flags)
+<span class="c"># expands to: verilator --binary ... basic.sv basic.c \</span>
+<span class="c">#   -CFLAGS -I.../include/python3.14 -LDFLAGS -L.../config-3.14-darwin -LDFLAGS -lpython3.14 ...</span></code></pre>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 230" role="img" aria-label="Build pipeline. Verilator turns basic.sv into C++ classes and the header Vtop__Dpi.h with the DPI prototypes. basic.c includes Python.h and Vtop__Dpi.h and is compiled by the C++ compiler. The linker combines the Verilator objects, basic.o and libpython3.14 into the Vtop executable.">
+<rect class="box" x="10" y="20" width="130" height="40" rx="8"/><text class="lbl" x="75" y="40">basic.sv</text>
+<path class="e" d="M140,40 H200" marker-end="url(#ah)"/>
+<rect class="box soft" x="200" y="20" width="130" height="40" rx="8"/><text class="lbl" x="265" y="40">verilator</text>
+<path class="e" d="M330,32 H400" marker-end="url(#ah)"/><path class="e" d="M330,50 H360 V110 H400" marker-end="url(#ah)"/>
+<rect class="box" x="400" y="16" width="150" height="32" rx="6"/><text class="lbl" x="475" y="32" style="font-size:12.5px">Vtop*.cpp</text>
+<rect class="box hot" x="400" y="94" width="150" height="32" rx="6"/><text class="lbl" x="475" y="110" style="font-size:12.5px">Vtop__Dpi.h</text>
+<rect class="box" x="10" y="150" width="130" height="40" rx="8"/><text class="lbl" x="75" y="170">basic.c</text>
+<rect class="box soft" x="10" y="94" width="130" height="32" rx="6"/><text class="lbl" x="75" y="110" style="font-size:12.5px">Python.h</text>
+<path class="e" d="M75,126 V150" marker-end="url(#ah)"/>
+<path class="e hot" d="M400,110 H170 V170 H140" marker-end="url(#ah-acc)"/><text class="t" x="180" y="146">#include</text>
+<path class="e" d="M140,178 H200" marker-end="url(#ah)"/>
+<rect class="box soft" x="200" y="158" width="130" height="40" rx="8"/><text class="lbl" x="265" y="178">clang++</text>
+<path class="e" d="M550,32 H600 V150" marker-end="url(#ah)"/>
+<path class="e" d="M330,178 H560" marker-end="url(#ah)"/>
+<rect class="box soft" x="560" y="150" width="90" height="56" rx="8"/><text class="lbl" x="605" y="170">ld</text><text class="note mid" x="605" y="192">Vtop</text>
+<rect class="box hot" x="400" y="206" width="150" height="22" rx="6"/><text class="lbl" x="475" y="217" style="font-size:12px">-lpython3.14</text>
+<path class="e hot" d="M550,217 H580 V206" marker-end="url(#ah-acc)"/>
+</svg>
+<figcaption><b>Fig. 0.2</b>What <code>verilator --binary</code> does with a <code>.c</code> file and Python. Two details matter: the <code>.c</code> is compiled <b>as C++</b> (the lab prints <code>__cplusplus=201703</code>), and including the generated <code>Vtop__Dpi.h</code> gives every definition the <code>extern "C"</code> linkage of its prototype and turns signature mismatches into compile errors (<a href="../01_first_call/guide.html">step 01</a>). The highlighted input is the one <code>--embed</code> adds.</figcaption>
+</figure>
+
+<div class="callout note" style="--c-label:'Commercial simulators'"><p>Questa, VCS and Xcelium usually load your DPI code as a <b>shared library</b> (<code>-sv_lib</code>, <code>-sv_liblist</code>) with <code>dlopen</code> instead of linking it into the executable. Then the shared library itself must link <code>libpython</code> (<code>-shared ... $(python3-config --embed --ldflags)</code>), and C extension modules like numpy's need libpython's symbols to be <em>globally</em> visible. If the simulator opens your library with <code>RTLD_LOCAL</code>, the classic symptom is <code>undefined symbol: PyExc_...</code> when importing numpy; the usual fix is to <code>dlopen("libpython3.X.so", RTLD_NOW | RTLD_GLOBAL)</code> in your init function before <code>Py_Initialize</code>. This is not measured here (no commercial simulator in this lab); on Verilator the executable links libpython directly, and numpy imports fine (<a href="#r-ext">0.10</a>).</p></div>
+
+<!-- 0.3 -->
+<h3 id="r-life"><span class="no">0.3</span>Lifecycle: start once, call many times, finalize once</h3>
+<p>The interpreter has three phases: <code>Py_Initialize*</code> (tens of milliseconds: the <code>sys</code> module, the import system, the encodings, <code>site</code>), any number of calls, and <code>Py_FinalizeEx</code> (flush <code>sys.stdout</code>, run <code>atexit</code> handlers, tear down modules). Map them onto the simulation:</p>
+<ul>
+<li><b>Init</b>: either explicitly, from an <code>initial</code> block through an imported <code>py_init(dir)</code> (the lab's <code>basic</code>), or lazily, inside the first DPI call (exercise <a href="#e7">E7</a>). Explicit init makes failures visible at time 0 and lets SV pass configuration (a plusarg with the module directory); lazy init means no init call to forget.</li>
+<li><b>Calls</b>: import the module once, fetch the callables once with <code>PyObject_GetAttrString</code> and cache the pointers in <code>static</code> variables. Each DPI call is then one <code>PyObject_Call*</code>.</li>
+<li><b>Finalize</b>: from an SV <code>final</code> block. Verilator runs <code>final</code> blocks on <code>$finish</code>, after the last time step.</li>
+</ul>
+<pre class="sv"><code><span class="c">// basic.sv (excerpt): the whole lifecycle in SV</span>
+<span class="k">import</span> "DPI-C" <span class="k">function int</span>  py_init(<span class="k">input string</span> moddir);
+<span class="k">import</span> "DPI-C" <span class="k">function void</span> py_fin();
+<span class="k">initial begin</span>
+  <span class="k">void</span>'($value$plusargs("pydir=%s", dir));
+  <span class="k">if</span> (py_init(dir) != 0) $fatal(1, "python init failed");
+  ...
+<span class="k">end</span>
+<span class="k">final</span> py_fin();</code></pre>
+<pre class="sv"><code><span class="c">/* basic.c (excerpt) */</span>
+<span class="k">int</span> py_init(<span class="k">const char</span> *moddir) {
+  <span class="k">if</span> (Py_IsInitialized()) <span class="k">return</span> 0;
+  Py_Initialize();
+  PyObject *path = PySys_GetObject("path");      <span class="c">/* borrowed: do NOT decref */</span>
+  PyObject *dir = PyUnicode_FromString(moddir);  <span class="c">/* new */</span>
+  PyList_Insert(path, 0, dir);
+  Py_DECREF(dir);
+  PyObject *mod = PyImport_ImportModule("toys"); <span class="c">/* new */</span>
+  <span class="k">if</span> (!mod) { PyErr_Print(); <span class="k">return</span> -1; }
+  f_add = PyObject_GetAttrString(mod, "add");    <span class="c">/* new, cached until py_fin */</span>
+  ...
+  Py_DECREF(mod);                                <span class="c">/* sys.modules keeps it alive */</span>
+  <span class="k">return</span> 0;
+}
+<span class="k">void</span> py_fin(<span class="k">void</span>) {
+  Py_CLEAR(f_add); ...                            <span class="c">/* drop cached refs first */</span>
+  Py_FinalizeEx();
+}</code></pre>
+
+<p>The lab's <code>lifecycle</code> experiment calls a Python function that does <code>print("PY hello from python")</code> and registers an <code>atexit</code> handler, with stdout redirected to a file as in any regression. Four runs:</p>
+<div class="tbl"><table>
+<tr><th>Run</th><th>What SV does</th><th>Log (measured)</th></tr>
+<tr><td class="mono">fin</td><td>finalize in <code>final</code></td><td class="mono">SV after say · PY hello from python · PY atexit handler ran · LOG fin rc=0 · SV final block done</td></tr>
+<tr><td class="mono">nofin</td><td>never finalizes</td><td class="mono">SV after say · SV final block done</td></tr>
+<tr><td class="mono">guard</td><td>finalize, then call again through a guarded wrapper</td><td class="mono">… LOG guard refused: interpreter not initialized · LOG guard rc=-1</td></tr>
+<tr><td class="mono">raw</td><td>finalize, then call a cached <code>PyObject*</code></td><td class="mono">… LOG raw calling a stale object · RUN_RC=139 (SIGSEGV)</td></tr>
+</table></div>
+<p>Read the <code>nofin</code> row twice: the Python output is <b>gone</b>, and the <code>atexit</code> handler never ran. Python's <code>sys.stdout</code> is its own buffer (<a href="#r-stdout">0.8</a>); only finalize flushes it, and the process exits through C <code>exit()</code>, which knows nothing about Python's buffers. Any Python-side cleanup (closing a results file, dumping coverage, writing a waveform of model internals) is lost the same way.</p>
+<p>The <code>raw</code> row is the other classic: a pointer cached before finalize points into freed interpreter memory. Use <code>Py_CLEAR</code> on every cached pointer in the finalize function, and guard every entry point with a flag (or <code>Py_IsInitialized()</code>) if anything can call after <code>final</code>.</p>
+
+<div class="callout trap"><p><b>Do not initialize and finalize per call.</b> The repo's 2014 <code>python-embedded-C/irun_tests/dpi.c</code> calls <code>Py_Initialize(); Py_Finalize();</code> inside the DPI function. Measured cost: <b>about 24 ms per cycle</b> on an idle machine (<code>life_cycle_ms</code>, importing <code>json</code>; under load it grows several-fold), a million times the cost of a call. Worse, it is not even correct: CPython does not support re-initialization for C extensions. Importing numpy in a second cycle fails with <code>ImportError: cannot load module more than once per process</code> (measured: 1 of 3 cycles succeeds).</p></div>
+
+<div class="callout note" style="--c-label:'In Verilator'"><p><code>$finish</code> does not stop the calling process immediately: the statements after it in the same <code>initial</code> still execute (the lab prints <code>LOG after_finish still running</code>), and then <code>final</code> blocks run. Do not write code after <code>$finish</code> that calls into Python assuming it will not run. In the lab every SV branch ends at its <code>$finish</code>.</p></div>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 200" role="img" aria-label="Timeline of a simulation. At time zero the initial block calls py_init: Py_Initialize, sys.path, import, cache callables. During the run every DPI call is one PyObject_Call. At finish the final block calls py_fin: clear cached references and Py_FinalizeEx, which flushes sys.stdout and runs atexit handlers. Calls after finalize crash unless guarded.">
+<path class="e" d="M20,100 H700" marker-end="url(#ah)"/><text class="t end" x="700" y="120">sim time</text>
+<rect class="box hot" x="20" y="40" width="160" height="44" rx="8"/><text class="lbl" x="100" y="56" style="font-size:12.5px">initial: py_init</text><text class="note mid" x="100" y="74">init · sys.path · import</text>
+<g><rect class="s1" x="200" y="56" width="40" height="28" rx="4"/><rect class="s1" x="260" y="56" width="40" height="28" rx="4"/><rect class="s1" x="320" y="56" width="40" height="28" rx="4"/><rect class="s1" x="380" y="56" width="40" height="28" rx="4"/><rect class="s1" x="440" y="56" width="40" height="28" rx="4"/></g>
+<text class="note mid" x="340" y="44">DPI calls: one PyObject_Call each</text>
+<rect class="box hot" x="510" y="40" width="170" height="44" rx="8"/><text class="lbl" x="595" y="56" style="font-size:12.5px">final: py_fin</text><text class="note mid" x="595" y="74">Py_CLEAR · Py_FinalizeEx</text>
+<text class="t" x="20" y="120">t = 0</text><text class="t" x="510" y="120">finish</text>
+<text class="note" x="510" y="146">flushes sys.stdout, runs atexit</text>
+<rect class="ghost" x="600" y="150" width="100" height="36" rx="6"/><text class="note mid" x="650" y="172">call → SIGSEGV</text>
+<text class="note" x="20" y="146">failure here is visible at t = 0</text>
+</svg>
+<figcaption><b>Fig. 0.3</b>The interpreter's lifecycle mapped onto the simulation. Everything expensive happens once; everything Python buffers is released only by the finalize in <code>final</code>.</figcaption>
+</figure>
+
+<!-- 0.4 -->
+<h3 id="r-config"><span class="no">0.4</span>Configuring the interpreter: PyConfig, PyInitConfig, venvs</h3>
+<p><code>Py_Initialize()</code> configures Python like the <code>python3</code> command with no arguments, reading <code>PYTHONPATH</code>, <code>PYTHONHOME</code> and friends from the environment. To control it from C there are two APIs. <b>PyConfig</b> (PEP 587, Python 3.8+) is a struct you fill and pass to <code>Py_InitializeFromConfig</code>. <b>PyInitConfig</b> (PEP 741, new in 3.14) sets options by name, so your code does not depend on the struct layout:</p>
+<pre class="sv"><code><span class="c">/* config.c: PyConfig (3.8+) */</span>
+PyConfig cfg;
+PyConfig_InitPythonConfig(&amp;cfg);                    <span class="c">/* like `python3`; Isolated = like `python3 -I` */</span>
+PyStatus st = PyConfig_SetBytesString(&amp;cfg, &amp;cfg.program_name, "dpi-sim");
+<span class="k">if</span> (*venv) st = PyConfig_SetBytesString(&amp;cfg, &amp;cfg.executable, venv);
+cfg.buffered_stdio = 0;                              <span class="c">/* like `python3 -u` */</span>
+st = Py_InitializeFromConfig(&amp;cfg);
+PyConfig_Clear(&amp;cfg);
+<span class="k">if</span> (PyStatus_Exception(st)) ... st.err_msg ...
+
+<span class="c">/* config.c: PyInitConfig (3.14) — same result, options by name */</span>
+PyInitConfig *c = PyInitConfig_Create();
+<span class="k">int</span> bad = PyInitConfig_SetStr(c, "program_name", "dpi-sim")
+       || PyInitConfig_SetInt(c, "buffered_stdio", 0)
+       || (*venv &amp;&amp; PyInitConfig_SetStr(c, "executable", venv))
+       || Py_InitializeFromInitConfig(c);
+PyInitConfig_Free(c);</code></pre>
+<p>What the lab measured, printing <code>sys.executable</code>, whether a venv is active (<code>sys.prefix != sys.base_prefix</code>) and whether numpy imports:</p>
+<div class="tbl"><table>
+<tr><th>Run</th><th><code>sys.executable</code></th><th>venv</th><th>numpy</th></tr>
+<tr><td class="mono">cfg_sys / cfg_init</td><td>the simulator binary <code>…/vl_config/Vtop</code></td><td>0</td><td>yes (80–130 ms import)</td></tr>
+<tr><td class="mono">cfg_venv / cfg_initvenv</td><td><code>…/build/venv/bin/python</code></td><td>1</td><td><b>no</b>: <code>ModuleNotFoundError</code></td></tr>
+<tr><td class="mono">cfg_venv_sys</td><td><code>…/build/venv_sys/bin/python</code></td><td>1</td><td>yes (<code>--system-site-packages</code>)</td></tr>
+<tr><td class="mono">cfg_replace</td><td colspan="3">init fails: <code>Failed to import encodings module</code></td></tr>
+</table></div>
+<p>Three lessons. First, an embedded interpreter believes it is the simulator binary; that is harmless, but it means Python finds its standard library from the <em>build-time</em> prefix, not from a venv. To use a project venv, set <code>executable</code> to the venv's <code>bin/python</code>: CPython's path calculation finds <code>pyvenv.cfg</code> next to it. Use an <b>absolute</b> path, since a relative one prints <code>RuntimeWarning: Unexpected value in sys.prefix</code>. A plain venv sees only its own packages, so numpy disappears; that is the isolation you want for reproducible regressions, once the venv has its requirements installed. Second, PyConfig and PyInitConfig give identical results. Prefer PyInitConfig on 3.14+, and PyConfig if you must support 3.8–3.13. Third, the pitfall in <code>cfg_replace</code>: setting <code>module_search_paths_set = 1</code> to add your model directory <b>replaces</b> the computed <code>sys.path</code>, the stdlib disappears, and init dies before anything runs. Add model directories after init (<code>PyList_Insert</code> on <code>sys.path</code>, as <code>basic.c</code> does), or through <code>PYTHONPATH</code>.</p>
+
+<div class="callout hv"><p>Make the model directory a <b>plusarg</b> (<code>+pydir=...</code>) passed to <code>py_init</code>, and the venv an absolute path set at init. The simulation command line then fully determines which Python code runs, which is what a regression needs. Relying on the user's shell <code>PYTHONPATH</code> is how "works on my machine" golden models happen.</p></div>
+
+<!-- 0.5 -->
+<h3 id="r-call"><span class="no">0.5</span>Calling Python and converting values</h3>
+<p>Every call has the same five beats: build argument objects, call, check for <code>NULL</code>, convert the result to C, release the result. The C API has shortcuts for the first two. <code>PyObject_CallFunction(f, fmt, ...)</code> builds a tuple from a <code>Py_BuildValue</code> format string. <code>PyObject_CallOneArg</code> and <code>PyObject_CallNoArgs</code> skip the tuple (vectorcall, 3.9+). <code>PyObject_CallMethod(obj, "name", fmt, ...)</code> calls a method. The format letters that matter for DPI types:</p>
+<div class="tbl"><table>
+<tr><th>SV type (C type, step 02)</th><th>Build letter</th><th>Python object</th><th>Back to C</th><th>Trap</th></tr>
+<tr><td><code>int</code> (<code>int</code>)</td><td class="mono">"i"</td><td><code>int</code></td><td><code>PyLong_AsLong</code></td><td>returns a 64-bit <code>long</code>: a cast to <code>int</code> silently wraps</td></tr>
+<tr><td><code>int unsigned</code> (<code>unsigned int</code>)</td><td class="mono">"I"</td><td><code>int</code> ≥ 0</td><td><code>PyLong_AsUnsignedLong</code></td><td>with "i" the value arrives negative in Python</td></tr>
+<tr><td><code>longint</code> (<code>long long</code>)</td><td class="mono">"L"</td><td><code>int</code></td><td><code>PyLong_AsLongLong</code></td><td><code>-1</code> + <code>OverflowError</code> at 2<sup>63</sup></td></tr>
+<tr><td><code>longint unsigned</code></td><td class="mono">"K"</td><td><code>int</code></td><td><code>PyLong_AsUnsignedLongLong</code></td><td>wider vectors: step 08 (<code>PyLong_AsNativeBytes</code>)</td></tr>
+<tr><td><code>real</code> (<code>double</code>)</td><td class="mono">"d"</td><td><code>float</code></td><td><code>PyFloat_AsDouble</code></td><td>accepts ints too; a <code>str</code> gives <code>TypeError</code></td></tr>
+<tr><td><code>string</code> (<code>const char*</code>)</td><td class="mono">"s"</td><td><code>str</code> (UTF-8 decode)</td><td><code>PyUnicode_AsUTF8</code></td><td>the pointer lives only as long as the <code>str</code> object</td></tr>
+<tr><td><code>byte</code> array (open array, step 04)</td><td class="mono">"y#"</td><td><code>bytes</code></td><td><code>PyBytes_AsString</code></td><td>Verilator: the actual must be a fixed-size array</td></tr>
+<tr><td><code>bit</code> (<code>svBit</code>)</td><td class="mono">"O" + <code>Py_True</code>/<code>Py_False</code></td><td><code>bool</code></td><td><code>PyObject_IsTrue</code></td><td>"i" works too but gives <code>0</code>/<code>1</code></td></tr>
+<tr><td><code>chandle</code> (<code>void*</code>)</td><td class="mono">"O"</td><td>any object you own</td><td>the pointer itself</td><td>ownership: <a href="#r-refs">0.6</a></td></tr>
+</table></div>
+
+<p>The integer row deserves its demo. Python integers are unbounded, so <code>add(0x7fffffff, 1)</code> returns <code>2147483648</code>. <code>PyLong_AsLong</code> converts it happily into a 64-bit <code>long</code>, and the <code>(int)</code> cast at the DPI boundary wraps it to <code>-2147483648</code> (lab: <code>LOG wrap r=-2147483648</code>). No error, no warning: the SV side sees a plausible negative number. A golden model that silently wraps is worse than none. The checked version asks for overflow explicitly and returns a status:</p>
+<pre class="sv"><code><span class="c">/* returns 0 ok, 1 result does not fit in int, -1 Python error */</span>
+<span class="k">int</span> py_add_checked(<span class="k">int</span> a, <span class="k">int</span> b, <span class="k">int</span> *sum) {       <span class="c">/* SV: output int sum */</span>
+  PyObject *r = PyObject_CallFunction(f_add, "ii", a, b);
+  <span class="k">if</span> (!r) { PyErr_Print(); <span class="k">return</span> -1; }
+  <span class="k">int</span> overflow;
+  <span class="k">long long</span> v = PyLong_AsLongLongAndOverflow(r, &amp;overflow);
+  Py_DECREF(r);
+  <span class="k">if</span> (overflow || v &lt; INT32_MIN || v &gt; INT32_MAX) <span class="k">return</span> 1;
+  *sum = (<span class="k">int</span>)v;
+  <span class="k">return</span> 0;
+}</code></pre>
+<p>Measured: <code>py_add_checked(0x7fffffff, 1)</code> returns 1; <code>py_add_checked(-5, 3)</code> returns 0 with <code>sum=-2</code>. With <code>longint</code> the boundary moves: <code>py_pow2(62)</code> returns 4611686018427387904, while 2<sup>63</sup> and 2<sup>64</sup> make <code>PyLong_AsLongLong</code> return <code>-1</code> and raise <code>OverflowError</code>. A C caller cannot tell that <code>-1</code> from a real <code>-1</code> without asking <code>PyErr_Occurred()</code>.</p>
+
+<p>Strings run into C's ownership problem in reverse. A DPI function that returns <code>string</code> returns a <code>const char*</code>, and the simulator copies it when the call returns (Annex H: the pointer must stay valid until then). <code>PyUnicode_AsUTF8(obj)</code> returns a pointer into the <code>str</code> object's own buffer, which is valid exactly as long as the object lives. So you cannot <code>Py_DECREF</code> the result before returning its UTF-8 pointer. The lab keeps the last result alive in a static and replaces it on the next call:</p>
+<pre class="sv"><code><span class="k">static</span> PyObject *last_str;                         <span class="c">/* owns the buffer returned to SV */</span>
+<span class="k">const char</span> *py_reverse(<span class="k">const char</span> *s) {
+  PyObject *r = PyObject_CallFunction(f_reverse, "s", s);
+  <span class="k">if</span> (!r) { PyErr_Print(); <span class="k">return</span> ""; }
+  Py_XSETREF(last_str, r);                          <span class="c">/* DECREFs the previous result */</span>
+  <span class="k">return</span> PyUnicode_AsUTF8(last_str);
+}</code></pre>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 210" role="img" aria-label="Data path of one call. SV int a and b become C ints through DPI, Py_BuildValue with format ii creates two new Python int objects inside an argument tuple, the Python function returns a new int object, PyLong_AsLong converts it to a C long and the cast to int returns to SV. Each Python object created is a new reference that the C code must release.">
+<text class="ttl" x="20" y="20">SV</text><text class="ttl" x="200" y="20">C (DPI)</text><text class="ttl" x="450" y="20">Python objects</text>
+<rect class="box" x="20" y="34" width="110" height="36" rx="6"/><text class="lbl" x="75" y="52" style="font-size:12.5px">int a, b</text>
+<path class="e" d="M130,52 H200" marker-end="url(#ah)"/>
+<rect class="box soft" x="200" y="34" width="190" height="36" rx="6"/><text class="lbl" x="295" y="52" style="font-size:12.5px">CallFunction(f, "ii", a, b)</text>
+<path class="e" d="M390,52 H450" marker-end="url(#ah)"/>
+<rect class="s1" x="450" y="30" width="110" height="44" rx="6"/><text class="lbl" x="505" y="52" style="font-size:12.5px">(a, b) tuple</text>
+<path class="e" d="M560,52 H600" marker-end="url(#ah)"/>
+<rect class="box hot" x="600" y="30" width="100" height="44" rx="6"/><text class="lbl" x="650" y="52" style="font-size:12.5px">toys.add</text>
+<path class="e" d="M650,74 V120" marker-end="url(#ah)"/>
+<rect class="s1" x="590" y="120" width="120" height="40" rx="6"/><text class="lbl" x="650" y="140" style="font-size:12.5px">int r (new ref)</text>
+<path class="e" d="M590,140 H390" marker-end="url(#ah)"/>
+<rect class="box soft" x="200" y="122" width="190" height="36" rx="6"/><text class="lbl" x="295" y="140" style="font-size:12.5px">PyLong_AsLong(r); DECREF</text>
+<path class="e hot" d="M200,140 H130" marker-end="url(#ah-acc)"/><text class="t mid" x="165" y="132">(int)</text>
+<rect class="box" x="20" y="122" width="110" height="36" rx="6"/><text class="lbl" x="75" y="140" style="font-size:12.5px">int result</text>
+<text class="note" x="20" y="190">the (int) cast is where 2147483648 becomes −2147483648</text>
+</svg>
+<figcaption><b>Fig. 0.4</b>One call, five beats. Python objects (teal) exist only between the build and the <code>DECREF</code>; what crosses back to SV is a C value. The narrowing cast at the boundary is the only place a value can change silently.</figcaption>
+</figure>
+
+<!-- 0.6 -->
+<h3 id="r-refs"><span class="no">0.6</span>Reference counting: new, borrowed, stolen</h3>
+<p>Every <code>PyObject</code> has a reference count; when it drops to zero the object is freed. Each C API function documents what it hands you, and you need exactly three words:</p>
+<ul>
+<li><b>New reference</b>: you own it and must <code>Py_DECREF</code> it (or hand it to someone who takes it). Most constructors and calls: <code>PyObject_Call*</code>, <code>PyObject_GetAttrString</code>, <code>PyImport_ImportModule</code>, <code>PyUnicode_FromString</code>, <code>PyLong_FromLong</code>.</li>
+<li><b>Borrowed reference</b>: someone else owns it; use it, do not decref it, do not keep it past the owner's lifetime. <code>PySys_GetObject</code>, <code>PyList_GetItem</code>, <code>PyTuple_GetItem</code>, <code>PyDict_GetItemString</code>, <code>PyEval_GetBuiltins</code>.</li>
+<li><b>Stolen reference</b>: the callee takes over your reference. Rare and explicit: <code>PyList_SetItem</code>, <code>PyTuple_SetItem</code>. (<code>PyList_Insert</code>, <code>PyList_Append</code> and <code>PyDict_SetItemString</code> do <em>not</em> steal: they add their own reference, which is why <code>basic.c</code> decrefs <code>dir</code> after inserting it into <code>sys.path</code>.)</li>
+</ul>
+<p>A missing <code>DECREF</code> is a leak; an extra one is a use-after-free that crashes later, somewhere else. The lab measures the leak with <code>sys.getallocatedblocks()</code> around 1000 calls of a Python function that returns a fresh 1000-element list: <b>0 blocks per call</b> with the <code>DECREF</code>, <b>2 blocks per call</b> without it (the list object and its item array). In a regression with 10<sup>7</sup> transactions that is 20 million blocks and several GB, so the run dies of memory exhaustion instead of failing a check.</p>
+
+<div class="callout note" style="--c-label:'Python 3.12+: immortal objects'"><p>The lab prints <code>Py_REFCNT(Py_None)</code> = <code>Py_REFCNT(7)</code> = <b>3221225472</b> and <code>Py_REFCNT(1000000)</code> = 1. Since PEP 683 (3.12), <code>None</code>, <code>True</code>, small ints and interned strings are <em>immortal</em>: their count is pinned and INCREF/DECREF on them do nothing. A refcount bug that only touches small ints is therefore invisible, and the same bug crashes as soon as the model returns <code>1000000</code>. Test bridges with big values and fresh objects, not with <code>0</code> and <code>1</code>.</p></div>
+
+<p>The <code>chandle</code> from <a href="../03_state_and_handles/guide.html">step 03</a> composes naturally with this: a Python object created for an SV-side instance is a <b>new reference owned by the SV side</b>. The handle is the <code>PyObject*</code> itself, and the matching "destroy" import decrefs it. Exercise <a href="#e10">E10</a> builds the book's shift-register exercises (Ex. 12.3–12.6) this way.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 220" role="img" aria-label="Ownership. The C bridge holds new references in static variables for cached callables and the last returned string. sys.path is a borrowed reference owned by the sys module. An SV chandle holds a new reference to a Python Shifter object until sh_free decrements it. A forgotten DECREF of a returned list leaks two blocks per call.">
+<rect class="ghost" x="10" y="10" width="330" height="200" rx="10"/><text class="ttl" x="22" y="30">C bridge (owns)</text>
+<rect class="box" x="24" y="44" width="140" height="32" rx="6"/><text class="lbl" x="94" y="60" style="font-size:12.5px">static f_add</text>
+<rect class="box" x="24" y="88" width="140" height="32" rx="6"/><text class="lbl" x="94" y="104" style="font-size:12.5px">static last_str</text>
+<rect class="box soft" x="184" y="44" width="140" height="32" rx="6"/><text class="lbl" x="254" y="60" style="font-size:12.5px">path (borrowed)</text>
+<rect class="box hot" x="24" y="150" width="140" height="40" rx="6"/><text class="lbl" x="94" y="170" style="font-size:12.5px">SV chandle h</text>
+<rect class="ghost" x="380" y="10" width="330" height="200" rx="10"/><text class="ttl" x="392" y="30">Python heap</text>
+<rect class="s1" x="400" y="44" width="130" height="32" rx="6"/><text class="lbl" x="465" y="60" style="font-size:12.5px">function add</text>
+<rect class="s1" x="400" y="88" width="130" height="32" rx="6"/><text class="lbl" x="465" y="104" style="font-size:12.5px">str "skcor…"</text>
+<rect class="s1" x="560" y="44" width="130" height="32" rx="6"/><text class="lbl" x="625" y="60" style="font-size:12.5px">list sys.path</text>
+<rect class="s1" x="400" y="150" width="130" height="40" rx="6"/><text class="lbl" x="465" y="170" style="font-size:12.5px">Shifter object</text>
+<rect class="s0" x="560" y="140" width="130" height="56" rx="6"/><text class="lbl" x="625" y="160" style="font-size:12.5px">leaked list</text><text class="t mid" x="625" y="182">+2 blocks / call</text>
+<path class="e" d="M164,54 C210,22 350,22 400,54" marker-end="url(#ah)"/>
+<path class="e" d="M164,104 H400" marker-end="url(#ah)"/>
+<path class="e dash" d="M324,60 C420,10 520,20 560,52" marker-end="url(#ah)"/>
+<path class="e hot" d="M164,170 H400" marker-end="url(#ah-acc)"/><text class="t mid" x="282" y="162">sh_new … sh_free</text>
+</svg>
+<figcaption><b>Fig. 0.5</b>Who owns what. Solid arrows are owned (new) references that someone must release; the dashed arrow is borrowed. The highlighted chandle makes SV the owner of a Python object, so freeing it is SV's job (<code>sh_free</code>), exactly like the C heap objects of step 03.</figcaption>
+</figure>
+
+<!-- 0.7 -->
+<h3 id="r-errors"><span class="no">0.7</span>Errors: from a Python exception to <code>$error</code></h3>
+<p>The C API reports failure in-band: functions that return objects return <code>NULL</code>; functions that return numbers return <code>-1</code> (or <code>-1.0</code>); in both cases a <b>thread-local error indicator</b> holds the exception. You must check every call and then either <b>handle and clear</b> the indicator or <b>propagate</b> it by returning failure yourself. The bridge is the last C frame before SV, so it must handle it: SV cannot see a Python exception.</p>
+<p><code>PyErr_Print()</code> is the quick way: it prints the traceback to Python's <code>sys.stderr</code> and clears the indicator. For a testbench you want the traceback <em>in the SV log, at the SV time, counted as an error</em>. Since 3.12, <code>PyErr_GetRaisedException()</code> returns the exception as one object and clears the indicator, replacing the three-pointer <code>PyErr_Fetch</code>. Format it with the <code>traceback</code> module and hand the text to an <b>exported</b> SV function. That makes the import <code>context</code> (<a href="../05_export_and_context/guide.html">step 05</a>):</p>
+<pre class="sv"><code><span class="c">// errors.sv</span>
+<span class="k">import</span> "DPI-C" <span class="k">context function int</span> err_divide(<span class="k">input int</span> a, <span class="k">input int</span> b, <span class="k">output int</span> q);
+<span class="k">export</span> "DPI-C" <span class="k">function</span> sv_py_error;
+<span class="k">function void</span> sv_py_error(<span class="k">string</span> where, <span class="k">string</span> text);
+  n_py_errors++;
+  $display("LOG sv_py_error n=%0d where=%s", n_py_errors, where);
+  $display("%s", text);
+<span class="k">endfunction</span></code></pre>
+<pre class="sv"><code><span class="c">/* errors.c */</span>
+<span class="k">static void</span> report(<span class="k">const char</span> *where) {
+  PyObject *exc = PyErr_GetRaisedException();               <span class="c">/* new ref; indicator cleared */</span>
+  PyObject *lines = PyObject_CallOneArg(f_format, exc);     <span class="c">/* traceback.format_exception */</span>
+  PyObject *sep = PyUnicode_FromString("");
+  PyObject *text = lines ? PyUnicode_Join(sep, lines) : NULL;
+  sv_py_error(where, text ? PyUnicode_AsUTF8(text) : "&lt;unformattable exception&gt;");
+  Py_XDECREF(text); Py_DECREF(sep); Py_XDECREF(lines); Py_DECREF(exc);
+}
+<span class="k">int</span> err_divide(<span class="k">int</span> a, <span class="k">int</span> b, <span class="k">int</span> *q) {
+  PyObject *r = PyObject_CallFunction(f_divide, "ii", a, b);
+  <span class="k">if</span> (!r) { report("divide"); <span class="k">return</span> -1; }
+  *q = (<span class="k">int</span>)PyLong_AsLong(r);
+  Py_DECREF(r);
+  <span class="k">return</span> 0;
+}</code></pre>
+<p>Measured output for <code>err_divide(7, 0, q)</code>, a full traceback with 3.11+ column markers, inside the simulation log:</p>
+<pre class="sv"><code>LOG sv_py_error n=1 where=divide
+Traceback (most recent call last):
+  File ".../lab/py/errs.py", line 6, in divide
+    return _inner(a, b)
+  File ".../lab/py/errs.py", line 10, in _inner
+    return a // b                      # ZeroDivisionError when b == 0
+           ~~^^~~
+ZeroDivisionError: division by zero
+
+LOG divide zero rc=-1</code></pre>
+
+<div class="callout trap"><p><b>An uncleared error poisons the next call.</b> <code>err_stale</code> calls <code>PyLong_AsLong</code> on a <code>str</code> (returns <code>-1</code>, sets <code>TypeError</code>), ignores it, and calls a perfectly good Python function. Measured: the call returns <code>NULL</code> with <code>SystemError: &lt;function divide at 0x…&gt; returned a result with an exception set</code>. The error surfaces in the wrong function, one call late. Rule: after any conversion that can fail, check <code>v == -1 &amp;&amp; PyErr_Occurred()</code>.</p></div>
+
+<div class="callout note" style="--c-label:'In Verilator'"><p>If the exported function calls <code>$error</code>, the first Python exception <b>ends the simulation</b>: Verilator's default error limit is 1, so <code>$error</code> becomes <code>$stop</code>, prints <code>Aborting...</code> and exits with status 1, <b>without running <code>final</code> blocks</b> (exercise <a href="#e8">E8</a>, measured). Python is then never finalized, so its buffered output is lost too. Run with <code>+verilator+error+limit+N</code> to keep going (<code>-Info: … $stop, ignored due to +verilator+error+limit</code>), or count errors in SV and report them at the end as <code>errors.sv</code> does. Commercial simulators continue after <code>$error</code> by default.</p></div>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 170" role="img" aria-label="Error path. A Python function raises ZeroDivisionError. PyObject_CallFunction returns NULL and the error indicator is set. The bridge calls PyErr_GetRaisedException, which clears the indicator, formats the traceback and calls the exported SV function sv_py_error, which counts the error and prints it, then the import returns minus one to the SV caller.">
+<rect class="box hot" x="560" y="20" width="150" height="40" rx="8"/><text class="lbl" x="635" y="40" style="font-size:12.5px">raise ZeroDivision</text>
+<path class="e" d="M560,40 H460" marker-end="url(#ah)"/><text class="t mid" x="510" y="32">NULL</text>
+<rect class="box soft" x="300" y="20" width="160" height="40" rx="8"/><text class="lbl" x="380" y="40" style="font-size:12.5px">GetRaisedException</text>
+<path class="e" d="M380,60 V90" marker-end="url(#ah)"/>
+<rect class="box soft" x="300" y="90" width="160" height="40" rx="8"/><text class="lbl" x="380" y="110" style="font-size:12.5px">format_exception</text>
+<path class="e hot" d="M300,110 H190" marker-end="url(#ah-acc)"/><text class="t mid" x="245" y="102">export</text>
+<rect class="box" x="30" y="90" width="160" height="40" rx="8"/><text class="lbl" x="110" y="110" style="font-size:12.5px">sv_py_error()</text>
+<rect class="box" x="30" y="20" width="160" height="40" rx="8"/><text class="lbl" x="110" y="40" style="font-size:12.5px">SV caller: rc = -1</text>
+<path class="e dash" d="M300,34 H190" marker-end="url(#ah)"/><text class="t mid" x="245" y="26">return -1</text>
+<text class="note" x="30" y="158">the indicator is clear when control returns to SV</text>
+</svg>
+<figcaption><b>Fig. 0.6</b>The error path. The exception never crosses into SV as such: the bridge consumes it, turns it into text plus a count, and returns an ordinary status code.</figcaption>
+</figure>
+
+<!-- 0.8 -->
+<h3 id="r-stdout"><span class="no">0.8</span>Two stdout buffers, one file descriptor</h3>
+<p><code>$display</code> in Verilator goes through C stdio (<code>printf</code> on <code>stdout</code>). Python's <code>print</code> goes through <code>sys.stdout</code>, an <code>io.TextIOWrapper</code> with its <b>own buffer</b> that ends in a <code>write()</code> on file descriptor 1. On a terminal both are line-buffered and everything looks fine. When the log is redirected to a file, as in every regression, both are block-buffered and the two streams no longer interleave. The <code>buffering</code> experiment alternates <code>$display("SV i")</code> and Python <code>print("PY i")</code> three times:</p>
+<div class="tbl"><table>
+<tr><th>Run</th><th>Python flush</th><th>C <code>fflush</code> before each Python call</th><th>Log order (measured)</th></tr>
+<tr><td class="mono">buf_none</td><td>no</td><td>no</td><td class="mono">SV 0, SV 1, SV 2, PY 0, PY 1, PY 2</td></tr>
+<tr><td class="mono">buf_py</td><td><code>flush=True</code></td><td>no</td><td class="mono">PY 0, PY 1, PY 2, SV 0, SV 1, SV 2</td></tr>
+<tr><td class="mono">buf_both</td><td><code>flush=True</code></td><td>yes</td><td class="mono">SV 0, PY 0, SV 1, PY 1, SV 2, PY 2</td></tr>
+<tr><td class="mono">buf_unbuf</td><td><code>buffered_stdio=0</code></td><td>yes</td><td class="mono">SV 0, PY 0, SV 1, PY 1, SV 2, PY 2</td></tr>
+</table></div>
+<p>Flushing only one side makes it worse, not better: in <code>buf_py</code> Python's text jumps <em>ahead</em> of SV text that was printed earlier. Both buffers must be drained at every hand-over. The robust setup is <code>buffered_stdio = 0</code> in the config (Python writes through, like <code>python -u</code>) plus <code>fflush(stdout)</code> at the top of every bridge function that may print. The alternative is to never <code>print</code> from the model and return text to SV for <code>$display</code>, which also puts it at the right simulation time.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 170" role="img" aria-label="Two buffers feed the same file descriptor. $display writes into the C stdio buffer, print writes into Python's sys.stdout buffer; each drains into file descriptor 1 at its own time, so the order in the log file is the order of the drains, not the order of the calls.">
+<rect class="box" x="20" y="24" width="140" height="40" rx="8"/><text class="lbl" x="90" y="44" style="font-size:12.5px">display (SV)</text>
+<rect class="box" x="20" y="104" width="140" height="40" rx="8"/><text class="lbl" x="90" y="124" style="font-size:12.5px">print (Python)</text>
+<path class="e" d="M160,44 H240" marker-end="url(#ah)"/><path class="e" d="M160,124 H240" marker-end="url(#ah)"/>
+<rect class="s0" x="240" y="24" width="170" height="40" rx="6"/><text class="lbl" x="325" y="44" style="font-size:12.5px">C stdio buffer</text>
+<rect class="s1" x="240" y="104" width="170" height="40" rx="6"/><text class="lbl" x="325" y="124" style="font-size:12.5px">sys.stdout buffer</text>
+<path class="e" d="M410,44 H470 V74 H520" marker-end="url(#ah)"/><text class="t" x="420" y="36">fflush / full</text>
+<path class="e" d="M410,124 H470 V94 H520" marker-end="url(#ah)"/><text class="t" x="420" y="146">flush / finalize</text>
+<rect class="box hot" x="520" y="64" width="180" height="40" rx="8"/><text class="lbl" x="610" y="84" style="font-size:12.5px">fd 1 → sim.log</text>
+</svg>
+<figcaption><b>Fig. 0.7</b>Why output order breaks only when the log is a file. The file sees drains, not calls; each buffer drains when it is full, when flushed, or (for Python) at finalize.</figcaption>
+</figure>
+
+<!-- 0.9 -->
+<h3 id="r-gil"><span class="no">0.9</span>The GIL, and what <code>--threads</code> does to your bridge</h3>
+<p>CPython (the default, GIL-enabled build) lets only the thread holding the <b>Global Interpreter Lock</b> run Python code, and each OS thread that calls into Python needs a <em>thread state</em>. <code>Py_Initialize</code> creates one for the calling thread and leaves that thread holding the GIL. In a single-threaded simulation that is all you need: every DPI call arrives on the same thread that initialized Python, and the bridge never mentions the GIL. All of 0.2–0.8 relies on this.</p>
+<p>Verilator's <code>--threads N</code> partitions the evaluated design into tasks run by N threads. The lab's <code>threads</code> experiment has eight independent lanes, each calling a Python function from its own <code>always_ff</code>, 400 clocks, and records which OS threads call the DPI function:</p>
+<div class="tbl"><table>
+<tr><th>Build</th><th>Import</th><th>GIL handling</th><th>Result (measured)</th></tr>
+<tr><td class="mono">th_single</td><td>non-pure</td><td>none</td><td>OK · 1 thread · all 3200 calls on the init thread</td></tr>
+<tr><td class="mono">th_np</td><td>non-pure, <code>--threads 4</code></td><td>none</td><td><b>SIGSEGV</b> (rc 139)</td></tr>
+<tr><td class="mono">th_np_safe</td><td>non-pure, <code>--threads 4</code></td><td>Ensure/Release</td><td>OK · 1 thread · <b>0</b> calls on the init thread</td></tr>
+<tr><td class="mono">th_pure</td><td><code>pure</code>, <code>--threads 4</code></td><td>none</td><td><b>SIGSEGV</b> (rc 139)</td></tr>
+<tr><td class="mono">th_pure_safe</td><td><code>pure</code>, <code>--threads 4</code></td><td>Ensure/Release</td><td>OK · 4 threads · 800 calls on the init thread</td></tr>
+<tr><td class="mono">th_all_safe</td><td>non-pure, <code>--threads 4 --threads-dpi all</code></td><td>Ensure/Release</td><td>OK · 4 threads</td></tr>
+</table></div>
+<p>The surprising row is <code>th_np_safe</code>. With the default <code>--threads-dpi pure</code>, Verilator serializes non-pure DPI calls onto one thread, but that thread is <b>not</b> the one that ran the <code>initial</code> block and <code>Py_Initialize</code>. So even a non-pure import, which you might believe is "single-threaded", crashes without GIL handling (<code>th_np</code>). Marking imports <code>pure</code> (or <code>--threads-dpi all</code>) spreads them over all four threads, which is legal only because of the GIL calls below. Python still runs one call at a time, so you gain no speed in the model, only correctness.</p>
+<pre class="sv"><code><span class="c">/* threads.c with -DGIL_SAFE: the pattern for any multithreaded host */</span>
+<span class="k">void</span> th_init(<span class="k">void</span>) {
+  Py_Initialize();
+  ...                                         <span class="c">/* import, cache callables */</span>
+  main_ts = PyEval_SaveThread();              <span class="c">/* release the GIL held since init */</span>
+}
+<span class="k">int</span> th_call(<span class="k">int</span> x) {
+  PyGILState_STATE g = PyGILState_Ensure();   <span class="c">/* any thread: get a thread state + GIL */</span>
+  PyObject *r = PyObject_CallFunction(f_add, "ii", x, 1);
+  <span class="k">int</span> v = r ? (<span class="k">int</span>)PyLong_AsLong(r) : -1;
+  Py_XDECREF(r);
+  PyGILState_Release(g);
+  <span class="k">return</span> v &amp; 0xffff;
+}
+<span class="k">void</span> th_fin(<span class="k">void</span>) {
+  PyEval_RestoreThread(main_ts);              <span class="c">/* take the GIL back on the init thread */</span>
+  Py_FinalizeEx();
+}</code></pre>
+<p>Skipping <code>PyEval_SaveThread</code> after init is the deadlock variant: the init thread keeps the GIL while waiting for the worker threads, and the workers wait in <code>PyGILState_Ensure</code> forever. Calls are not free either: <code>PyGILState_Ensure</code>/<code>Release</code> add a mutex hand-off per call, which step 08 measures.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 210" role="img" aria-label="Threads with Verilator --threads 4. The main thread runs the initial block, Py_Initialize, then releases the GIL with PyEval_SaveThread. Worker threads 1 to 3 evaluate design partitions; each DPI call takes the GIL with PyGILState_Ensure, runs Python, and releases it. Only one Python call runs at a time. At final the main thread takes the GIL back with PyEval_RestoreThread and finalizes.">
+<text class="ttl" x="10" y="20">thread</text>
+<text class="t" x="10" y="54">main</text><text class="t" x="10" y="94">worker 1</text><text class="t" x="10" y="134">worker 2</text><text class="t" x="10" y="174">worker 3</text>
+<line class="grid" x1="80" y1="50" x2="710" y2="50"/><line class="grid" x1="80" y1="90" x2="710" y2="90"/><line class="grid" x1="80" y1="130" x2="710" y2="130"/><line class="grid" x1="80" y1="170" x2="710" y2="170"/>
+<rect class="box hot" x="80" y="36" width="130" height="28" rx="4"/><text class="lbl" x="145" y="50" style="font-size:12px">init + SaveThread</text>
+<rect class="s1" x="240" y="76" width="70" height="28" rx="4"/><text class="lbl" x="275" y="90" style="font-size:12px">GIL</text>
+<rect class="s1" x="320" y="116" width="70" height="28" rx="4"/><text class="lbl" x="355" y="130" style="font-size:12px">GIL</text>
+<rect class="s1" x="400" y="156" width="70" height="28" rx="4"/><text class="lbl" x="435" y="170" style="font-size:12px">GIL</text>
+<rect class="s1" x="480" y="36" width="70" height="28" rx="4"/><text class="lbl" x="515" y="50" style="font-size:12px">GIL</text>
+<rect class="ghost" x="320" y="76" width="70" height="28" rx="4"/><text class="note mid" x="355" y="90">waits</text>
+<rect class="box hot" x="580" y="36" width="130" height="28" rx="4"/><text class="lbl" x="645" y="50" style="font-size:12px">Restore + Finalize</text>
+<text class="note" x="240" y="204">PyGILState_Ensure … Release around every call: one Python call at a time</text>
+</svg>
+<figcaption><b>Fig. 0.8</b>The GIL pattern for a multithreaded simulator. The main thread gives the GIL away right after init and takes it back only to finalize; every DPI call, on whatever thread Verilator picked, brackets its Python work with <code>PyGILState_Ensure</code>/<code>Release</code>.</figcaption>
+</figure>
+
+<div class="callout note" style="--c-label:'Free-threaded Python'"><p>Python 3.13+ also ships a <em>free-threaded</em> build (<code>python3.14t</code>, PEP 703) without a GIL. The thread-state rules still apply (<code>PyGILState_Ensure</code> still attaches a thread state), but your Python model then runs truly in parallel and must be thread-safe itself. Not measured here; this lab uses the default GIL build (<code>sys._is_gil_enabled()</code> is <code>True</code>).</p></div>
+
+<!-- 0.10 -->
+<h3 id="r-ext"><span class="no">0.10</span>Extension modules: does numpy work inside the simulator?</h3>
+<p>Yes, on this setup. <code>cfg_sys</code> imports numpy in 80–130 ms and computes <code>np.arange(4) @ np.arange(4) = 14</code> inside the Verilator process. numpy's C extension needs libpython's symbols (<code>PyExc_TypeError</code>, <code>PyLong_FromLong</code>, …) at load time. Here the simulator executable links <code>libpython3.14</code> (a framework dylib on macOS), so the dynamic loader resolves them from the process. Two things to remember:</p>
+<ul>
+<li>numpy can be imported <b>once per process</b>. After a finalize, a re-initialized interpreter cannot import it again (<a href="#r-life">0.3</a>). Finalize once, at the end.</li>
+<li>The import cost (~0.1 s) is paid at the first <code>import</code>. Import heavy modules in <code>py_init</code> so the cost lands at time 0 and not in the middle of the first transaction.</li>
+</ul>
+<p>With a commercial simulator that <code>dlopen</code>s your DPI library, revisit the <code>RTLD_GLOBAL</code> note in <a href="#r-build">0.2</a>.</p>
+
+<!-- 0.11 -->
+<h3 id="r-py2"><span class="no">0.11</span>What changed since the Python 2 examples in this repo</h3>
+<p>The repo's <code>python-embedded-C/</code> (Python 2.6, irun, CentOS 6) and <code>bridge_irun/</code> follow the classic recipe from the 2000s: <code>Py_Initialize</code>, <code>PyRun_SimpleString</code>, <code>PyObject_CallObject</code>, <code>PYTHONPATH</code> exported in the shell. The ideas are unchanged. These are the details that now differ:</p>
+<div class="tbl"><table>
+<tr><th>Then (Python 2.x)</th><th>Now (3.12–3.14)</th></tr>
+<tr><td><code>PyString_*</code> for text and bytes, <code>PyInt_*</code></td><td><code>PyUnicode_*</code> (text) vs <code>PyBytes_*</code> (bytes); only <code>PyLong_*</code>, unbounded</td></tr>
+<tr><td><code>Py_SetProgramName</code>, <code>Py_SetPythonHome</code>, <code>PySys_SetArgv</code></td><td>deprecated since 3.11 (still in the 3.14 headers): use <code>PyConfig</code> (3.8) or <code>PyInitConfig</code> (3.14)</td></tr>
+<tr><td>link <code>-lpython2.6</code> by hand</td><td><code>python3-config --embed --ldflags</code> (3.8+)</td></tr>
+<tr><td><code>PyEval_InitThreads()</code> required before threads</td><td>no-op since 3.7, deprecated since 3.9 (the GIL exists from init)</td></tr>
+<tr><td><code>PyErr_Fetch(&amp;type, &amp;value, &amp;tb)</code></td><td><code>PyErr_GetRaisedException()</code> (3.12); <code>PyErr_Fetch</code> still works but is deprecated</td></tr>
+<tr><td><code>Py_Initialize(); Py_Finalize();</code> per call (<code>irun_tests/dpi.c</code>)</td><td>once per process; numpy cannot re-import after finalize</td></tr>
+<tr><td>refcounts on everything</td><td>immortal <code>None</code>/small ints (3.12): small-value tests hide bugs</td></tr>
+<tr><td><code>vpi_printf</code> / <code>io_printf</code> for output</td><td><code>printf</code> + <code>fflush</code>; mind Python's own buffer (0.8)</td></tr>
+</table></div>
+
+<!-- 0.12 -->
+<h3 id="r-recipe"><span class="no">0.12</span>Recipe: a robust Python bridge</h3>
+<ol>
+<li>Build with <code>python3-config --embed</code>; include <code>V&lt;top&gt;__Dpi.h</code> in the bridge.</li>
+<li>One <code>py_init(dir)</code> from <code>initial</code>: <code>PyConfig</code>/<code>PyInitConfig</code> with <code>buffered_stdio=0</code> and an absolute venv <code>executable</code>; then insert the model directory (plusarg) into <code>sys.path</code>; import every module (including numpy) and cache the callables. Return a status; <code>$fatal</code> on failure.</li>
+<li>Each bridge function: <code>fflush(stdout)</code>; build args; call; on <code>NULL</code> report the exception through an exported SV function and return a status; convert with overflow checks; <code>DECREF</code> everything you own; keep returned strings alive in a static.</li>
+<li>If the simulator may call from other threads (<code>--threads</code>, commercial MT engines): <code>PyEval_SaveThread</code> after init, <code>PyGILState_Ensure/Release</code> around every call, <code>PyEval_RestoreThread</code> before finalize.</li>
+<li><code>final</code>: <code>Py_CLEAR</code> every cached pointer, <code>Py_FinalizeEx</code> once; guard entry points against calls after it.</li>
+<li>Test the bridge with large values and fresh objects (immortals hide bugs), and run with the log redirected to a file.</li>
+</ol>
+<p>Step 08 applies this recipe to real golden models (<code>zlib.crc32</code> and a numpy FIR for the DUTs in <code>common/rtl</code>), adds arbitrary-width integers and arrays, and measures the cost per call against the C model of step 06.</p>
+
+<h2 id="s1"><span class="no">§1 · Objectives</span>What you should be able to do</h2>
+<ul>
+<li>Build a Verilator simulation that embeds CPython, and explain why <code>--embed</code> is needed and what a missing <code>-lpython</code> looks like.</li>
+<li>Place init, calls and finalize correctly in the simulation, and predict what is lost when finalize is skipped or <code>$error</code> aborts the run.</li>
+<li>Configure the interpreter (program name, unbuffered stdio, venv, <code>sys.path</code>) with <code>PyConfig</code> or <code>PyInitConfig</code>, and avoid the <code>module_search_paths</code> trap.</li>
+<li>Convert every scalar DPI type to and from Python objects without silent truncation, and return strings with a correct lifetime.</li>
+<li>Classify every C API result as new, borrowed or stolen, and measure a leak.</li>
+<li>Turn a Python exception into a traceback in the SV log and a status code, and never leave the error indicator set.</li>
+<li>Make Python output interleave correctly with <code>$display</code> in a redirected log.</li>
+<li>Make a bridge safe under <code>verilator --threads</code> with the GIL state API.</li>
+</ul>
+<p>Prerequisites: <a href="../02_data_types/guide.html">02</a> (C types of DPI arguments), <a href="../03_state_and_handles/guide.html">03</a> (<code>chandle</code>), <a href="../04_arrays_structs_strings/guide.html">04</a> (open arrays, string lifetime), <a href="../05_export_and_context/guide.html">05</a> (export, <code>context</code>).</p>
+
+<h2 id="s2"><span class="no">§2 · Exercises</span>12 graded exercises, with solutions</h2>
+<p>★ basic · ★★ intermediate · ★★★ real design. Code solutions live in <code>lab/ex/</code> and every output quoted below is asserted by <code>check.py</code>. "Ex. 12.N" is an exercise from Spear &amp; Tumbush ch. 12 (the book has no solutions), redone with Python as the model.</p>
+
+<div class="q" id="e1">
+<p><span class="n">E1 ★</span><b>Predict.</b> <code>py_add</code> converts the Python result with <code>(int)PyLong_AsLong(r)</code>. What does <code>$display("%0d", py_add(32'h7fff_ffff, 1))</code> print on this Mac, and what would change with <code>PyLong_AsLongLong</code>?</p>
+<details><summary>Show solution</summary><div class="a">
+<p><code>-2147483648</code> (measured: <code>LOG wrap r=-2147483648</code>). Python computes <code>2147483648</code> exactly; <code>PyLong_AsLong</code> returns it as a 64-bit <code>long</code> (LP64), and the cast to the DPI <code>int</code> keeps the low 32 bits. <code>PyLong_AsLongLong</code> changes nothing, since the value fits in 64 bits and the truncation happens at the cast. Only an explicit range check (<code>py_add_checked</code>) or <code>PyLong_AsLongLongAndOverflow</code> plus a check against <code>INT32_MIN/MAX</code> catches it. On Windows (LLP64) <code>long</code> is 32-bit and <code>PyLong_AsLong</code> itself would raise <code>OverflowError</code> and return <code>-1</code>.</p>
+</div></details>
+</div>
+
+<div class="q" id="e2">
+<p><span class="n">E2 ★</span><b>Find the bug (build line).</b> A colleague builds with</p>
+<pre class="sv"><code>verilator --binary tb.sv bridge.c -CFLAGS "$(python3-config --cflags)" -LDFLAGS "$(python3-config --ldflags)"</code></pre>
+<p>and gets <code>Undefined symbols for architecture x86_64: "_PyList_Insert" ... "_Py_Initialize"</code>. Why, and what is the fix? Why does Python make this the default?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>Since 3.8, <code>python3-config --ldflags</code> does not include <code>-lpython3.X</code> (lab build <code>noembed</code>, same error). The default targets <em>extension modules</em>, which must not link libpython: they are loaded into an interpreter that already provides the symbols (often a <code>python3</code> executable with libpython linked statically), and linking the library again would load a second, separate copy. An embedder is the program that provides those symbols, so it asks for them: <code>python3-config --embed --ldflags</code>. Two smaller issues: quoting the whole flag string as one <code>-LDFLAGS</code> argument works for Verilator but is fragile (the lab's <code>py_flags</code> passes one word per flag), and <code>--cflags</code> brings optimization and warning flags you may not want. <code>--includes</code> is enough.</p>
+</div></details>
+</div>
+
+<div class="q" id="e3">
+<p><span class="n">E3 ★</span><b>Find the bug.</b> This init "cleans up" after itself. It works for a while, then crashes at an unrelated import. Why?</p>
+<pre class="sv"><code>PyObject *path = PySys_GetObject("path");
+PyObject *dir = PyUnicode_FromString("py");
+PyList_Insert(path, 0, dir);
+Py_DECREF(dir);
+Py_DECREF(path);            <span class="c">/* tidy up */</span></code></pre>
+<details><summary>Show solution</summary><div class="a">
+<p><code>PySys_GetObject</code> returns a <b>borrowed</b> reference: the <code>sys</code> module owns <code>sys.path</code>. Decrefing it drops the module's own reference; when the count hits zero the list is freed while <code>sys.path</code> still points at it. The next import walks a freed list: a crash or garbage, far from the bug. Remove the last line. <code>Py_DECREF(dir)</code> is right: <code>PyUnicode_FromString</code> returned a new reference and <code>PyList_Insert</code> added its own, it does not steal.</p>
+</div></details>
+</div>
+
+<div class="q" id="e4">
+<p><span class="n">E4 ★</span><b>Predict.</b> Stdout is redirected to a file. SV does <code>$display("SV 0")</code>, then calls Python <code>print("PY 0", flush=True)</code>, then <code>$display("SV 1")</code>, then <code>print("PY 1", flush=True)</code>. The bridge does not call <code>fflush</code>. What order lands in the file?</p>
+<details><summary>Show solution</summary><div class="a">
+<p><code>PY 0, PY 1, SV 0, SV 1</code> (lab <code>buf_py</code>, with three iterations). Python's flush writes straight to fd 1; the <code>$display</code> text sits in C stdio's block buffer until it fills or until the exit flush. Flushing one side is worse than flushing none: with no flushes you get <code>SV…, PY…</code> (Python's buffer drains at finalize, after C's), which at least keeps each source in order. Fix: <code>fflush(stdout)</code> in the bridge before calling Python, plus <code>flush=True</code> or <code>buffered_stdio=0</code> (<code>buf_both</code>, <code>buf_unbuf</code>).</p>
+</div></details>
+</div>
+
+<div class="q" id="e5">
+<p><span class="n">E5 ★★</span><b>Ex. 12.1 with a Python model.</b> Write <code>shift_py(int unsigned i, int n)</code>: a 32-bit shift, left for <code>n &gt; 0</code>, right (logical) for <code>n &lt; 0</code>, unchanged for <code>n == 0</code>. The model is Python, the bridge is C. First try the "obvious" model <code>(i &lt;&lt; n) &amp; 0xFFFFFFFF</code>: what happens for <code>n = -4</code>?</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c"># ex/py/exmods.py</span>
+MASK = 0xFFFF_FFFF
+<span class="k">def</span> shift(i, n):
+    i &amp;= MASK
+    <span class="k">return</span> (i &lt;&lt; n) &amp; MASK <span class="k">if</span> n &gt;= 0 <span class="k">else</span> i &gt;&gt; -n</code></pre>
+<pre class="sv"><code><span class="c">/* ex/shift.c: "I" passes the unsigned value, so Python sees 0x800000F1, not a negative int */</span>
+<span class="k">unsigned int</span> shift_py(<span class="k">unsigned int</span> i, <span class="k">int</span> n, <span class="k">int</span> naive) {
+  PyObject *r = PyObject_CallFunction(naive ? f_naive : f_shift, "Ii", i, n);
+  <span class="k">if</span> (!r) { ... print type and message ...; <span class="k">return</span> 0xDEADBEEF; }
+  <span class="k">unsigned int</span> v = (<span class="k">unsigned int</span>)PyLong_AsUnsignedLong(r);
+  Py_DECREF(r);
+  <span class="k">return</span> v;
+}</code></pre>
+<p>Measured on <code>32'h8000_00F1</code>: <code>n=4 → 00000f10</code>, <code>n=-4 → 0800000f</code>, <code>n=0 → 800000f1</code>; <code>shift_py(1, 31) → 80000000</code>; <code>shift_py(32'hFFFF_FFFF, -40) → 0</code>. The naive model raises <code>ValueError: negative shift count</code> (Python, unlike C, refuses negative shifts instead of invoking undefined behavior), and the bridge returns the sentinel <code>deadbeef</code>. If you had passed <code>i</code> with <code>"i"</code>, Python would see <code>-2147483407</code>. This model masks it back to 32 bits first, but a model that does not (say <code>return i &gt;&gt; 4</code>) would sign-extend, because Python's <code>&gt;&gt;</code> on a negative int is arithmetic. Pass unsigned SV types with <code>"I"</code>/<code>"K"</code>.</p>
+</div></details>
+</div>
+
+<div class="q" id="e6">
+<p><span class="n">E6 ★★</span><b>Find the bug.</b> This works in a unit test and returns garbage strings (sometimes) in a long simulation. Why? Give two fixes.</p>
+<pre class="sv"><code><span class="k">const char</span> *py_name(<span class="k">int</span> id) {
+  PyObject *r = PyObject_CallFunction(f_name, "i", id);
+  <span class="k">const char</span> *s = PyUnicode_AsUTF8(r);
+  Py_DECREF(r);
+  <span class="k">return</span> s;
+}</code></pre>
+<details><summary>Show solution</summary><div class="a">
+<p><code>PyUnicode_AsUTF8</code> returns a pointer into the <code>str</code> object's cached UTF-8 buffer. After <code>Py_DECREF(r)</code> the object may be freed (if the function returned a fresh string) and the pointer dangles until the simulator copies it. In a short test the memory is usually not reused yet. If the function returns an interned or immortal string (say a literal), the object survives and the bug hides completely. Fixes: (1) keep the result alive until the next call, as <code>py_reverse</code> does with <code>Py_XSETREF(last_str, r)</code>; (2) copy into a static C buffer (<code>strncpy</code>) and decref immediately. Both are valid because the SV side copies the returned string at the end of the call (step 04). Not thread-safe without the GIL (0.9).</p>
+</div></details>
+</div>
+
+<div class="q" id="e7">
+<p><span class="n">E7 ★★</span><b>Write.</b> Make the bridge self-initializing: no <code>py_init</code> import, the module directory comes from the environment variable <code>PY_DPI_PATH</code> (default <code>.</code>), and initialization happens exactly once whatever the call order. SV still finalizes in <code>final</code>, but only if Python was ever started.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">/* ex/lazy.c */</span>
+<span class="k">static</span> PyObject *f_add;
+<span class="k">static int</span> inits;
+<span class="k">static int</span> ensure(<span class="k">void</span>) {
+  <span class="k">if</span> (f_add) <span class="k">return</span> 0;
+  inits++;
+  Py_Initialize();
+  <span class="k">const char</span> *dirs = getenv("PY_DPI_PATH");
+  PyObject *path = PySys_GetObject("path"), *dir = PyUnicode_FromString(dirs ? dirs : ".");
+  PyList_Insert(path, 0, dir);
+  Py_DECREF(dir);
+  PyObject *m = PyImport_ImportModule("toys");
+  <span class="k">if</span> (!m) { PyErr_Print(); <span class="k">return</span> -1; }
+  f_add = PyObject_GetAttrString(m, "add");
+  Py_DECREF(m);
+  <span class="k">return</span> f_add ? 0 : -1;
+}
+<span class="k">int</span> lazy_add(<span class="k">int</span> a, <span class="k">int</span> b) { <span class="k">if</span> (ensure()) <span class="k">return</span> 0; ... }
+<span class="k">void</span> lazy_fin(<span class="k">void</span>) { <span class="k">if</span> (f_add) { Py_CLEAR(f_add); Py_FinalizeEx(); } }</code></pre>
+<p>Measured with <code>PY_DPI_PATH=py</code>: <code>LOG lazy a=3 b=7 inits=1</code>. Trade-off: a failing import now shows up at the first transaction, not at time 0, and the error path must exist in every entry point. Note that <code>ensure()</code> is not thread-safe: under <code>--threads</code>, two first calls can race into <code>Py_Initialize</code>. Either init explicitly from <code>initial</code> or guard <code>ensure</code> with <code>pthread_once</code>.</p>
+</div></details>
+</div>
+
+<div class="q" id="e8">
+<p><span class="n">E8 ★★</span><b>Write.</b> <code>py_eval(string expr, output real r)</code> evaluates a Python expression (with <code>math</code> available) and returns 0, or -1 after reporting <code>TypeName: message</code> through an exported SV function that calls <code>$error</code>. Test with <code>math.sqrt(2) * 2**10</code>, <code>sum(range(101))</code>, <code>1/0</code>, <code>'abc'</code>. What happens on Verilator, and how do you get all four results?</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">/* ex/eval.c (core) */</span>
+<span class="k">static</span> PyObject *globals;                  <span class="c">/* {'__builtins__': ..., 'math': ...} built at init */</span>
+<span class="k">static int</span> fail(<span class="k">void</span>) {
+  PyObject *exc = PyErr_GetRaisedException();
+  PyObject *msg = PyUnicode_FromFormat("%s: %S", Py_TYPE(exc)-&gt;tp_name, exc);
+  sv_py_error(PyUnicode_AsUTF8(msg));        <span class="c">/* exported; import must be context */</span>
+  Py_DECREF(msg); Py_DECREF(exc);
+  <span class="k">return</span> -1;
+}
+<span class="k">int</span> py_eval(<span class="k">const char</span> *expr, <span class="k">double</span> *r) {
+  PyObject *v = PyRun_String(expr, Py_eval_input, globals, globals);
+  <span class="k">if</span> (!v) <span class="k">return</span> fail();
+  <span class="k">double</span> d = PyFloat_AsDouble(v);
+  Py_DECREF(v);
+  <span class="k">if</span> (d == -1.0 &amp;&amp; PyErr_Occurred()) <span class="k">return</span> fail();
+  *r = d;
+  <span class="k">return</span> 0;
+}</code></pre>
+<p>Measured: <code>1448.154688</code>, <code>5050.0</code>, then <code>%Error: … python: ZeroDivisionError: division by zero</code>, <code>Verilog $stop</code>, <code>Aborting...</code>, exit status 1. The fourth call never happens and neither does the <code>final</code> block (its <code>LOG eval final ran</code> is missing), so Python is never finalized. With <code>+verilator+error+limit+10</code>: all four run, the fourth reports <code>TypeError: must be real number, not str</code> (from <code>PyFloat_AsDouble</code>, caught by the <code>-1.0 &amp;&amp; PyErr_Occurred()</code> check), and <code>final</code> runs.</p>
+</div></details>
+</div>
+
+<div class="q" id="e9">
+<p><span class="n">E9 ★★</span><b>Predict.</b> A bridge that never mentions the GIL works in a single-threaded build. You rebuild with <code>verilator --threads 4</code>, keeping all imports non-pure ("so Verilator serializes them"). What happens, and why?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>Segmentation fault (lab <code>th_np</code>, rc 139). Serialized is not the same as "on the init thread". With the GIL-safe bridge, <code>th_np_safe</code> shows all 3200 calls on a single thread, with <b>0</b> of them on the thread that ran <code>Py_Initialize</code>. That worker thread has no Python thread state and does not hold the GIL, so the first <code>PyObject_CallFunction</code> dereferences a null thread state. Fix: <code>PyEval_SaveThread()</code> after init, <code>PyGILState_Ensure/Release</code> in every bridge function, <code>PyEval_RestoreThread</code> before finalize (0.9). Same result with <code>pure</code> imports, which Verilator does spread over 4 threads.</p>
+</div></details>
+</div>
+
+<div class="q" id="e10">
+<p><span class="n">E10 ★★★</span><b>Ex. 12.2–12.6 with Python objects.</b> The book grows <code>shift_c</code> into a shift register with a load flag (12.2), multiple instances identified by address (12.3), a call counter shared by all instances (12.4), an initial value (12.5), and a class (12.6). Do all of it with the state in a Python class, one Python object per SV-side instance, held through a <code>chandle</code>. Who owns the object, and how do you prove nothing leaks?</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c"># ex/py/exmods.py</span>
+<span class="k">class</span> Shifter:
+    calls = 0                           <span class="c"># class attribute: shared (Ex. 12.4)</span>
+    <span class="k">def</span> __init__(self, init=0):         <span class="c"># Ex. 12.5</span>
+        self.reg = init &amp; MASK
+    <span class="k">def</span> step(self, i, n, ld):
+        Shifter.calls += 1
+        self.reg = shift(i <span class="k">if</span> ld <span class="k">else</span> self.reg, n)
+        <span class="k">return</span> self.reg</code></pre>
+<pre class="sv"><code><span class="c">/* ex/shifter.c: the chandle IS the PyObject*, a new reference owned by SV */</span>
+<span class="k">void</span> *sh_new(<span class="k">unsigned int</span> init) {
+  PyObject *obj = PyObject_CallFunction(cls, "I", init);
+  <span class="k">if</span> (!obj) { PyErr_Print(); <span class="k">return</span> NULL; }
+  live++;
+  <span class="k">return</span> obj;
+}
+<span class="k">unsigned int</span> sh_step(<span class="k">void</span> *h, <span class="k">unsigned int</span> i, <span class="k">int</span> n, svBit ld) {
+  PyObject *r = PyObject_CallMethod((PyObject *)h, "step", "IiO", i, n, ld ? Py_True : Py_False);
+  ...
+}
+<span class="k">void</span> sh_free(<span class="k">void</span> *h) { Py_XDECREF((PyObject *)h); live--; }</code></pre>
+<p>Measured: <code>a = sh_new(1)</code>, <code>b = sh_new(32'hF000_0000)</code>; first step (shift the register): <code>a1=00000010 b1=0f000000</code>; second (<code>a</code> loads <code>3&lt;&lt;1</code>, <code>b</code> shifts again): <code>a2=00000006 b2=00f00000</code>; <code>calls=4 live=2</code>; after <code>sh_free</code> on both, <code>live_after_free=0</code>. SV owns each object from <code>sh_new</code> to <code>sh_free</code>: that pairing is the DPI equivalent of the book's "unique identifier = address of the storage" (Ex. 12.3), with the Python object's identity replacing the C struct's address. To prove there is no leak beyond the counter, measure <code>sys.getallocatedblocks()</code> before <code>sh_new</code> and after <code>sh_free</code>, as <code>rc_blocks_per_call</code> does. A class wrapper on the SV side (Ex. 12.6) would call <code>sh_free</code> from a method, since SV has no destructors.</p>
+</div></details>
+</div>
+
+<div class="q" id="e11">
+<p><span class="n">E11 ★★★</span><b>§12.9 revisited: spawn vs embed.</b> Port Samples 12.51–12.52 (run a script with <code>system()</code>, return its exit status) to this machine, using <code>python3 -c 'import sys; sys.exit(3)'</code>. Then measure the cost per call of spawning <code>python3 -c 'pass'</code> against an embedded call to a builtin. Does the book's C compile as is?</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">/* ex/spawn.c */</span>
+<span class="k">#include</span> &lt;sys/wait.h&gt;          <span class="c">/* the book's &lt;wait.h&gt; is Linux-only */</span>
+<span class="k">int</span> call_cmd(<span class="k">const char</span> *cmd) {
+  <span class="k">int</span> status = system(cmd);      <span class="c">/* macOS WEXITSTATUS needs an lvalue */</span>
+  <span class="k">return</span> WEXITSTATUS(status);
+}</code></pre>
+<p>Two portability fixes to Sample 12.52: <code>&lt;wait.h&gt;</code> does not exist on macOS (<code>&lt;sys/wait.h&gt;</code> is POSIX), and <code>WEXITSTATUS(system(cmd))</code> fails to compile here because the macOS macro takes the address of its argument: <code>error: cannot take the address of an rvalue of type 'int'</code> (Verilator compiles the file as C++). Measured: <code>call_cmd</code> returns <code>3</code>; spawn costs about <b>40 ms</b> per call on an idle machine; an embedded call to <code>abs</code> about <b>0.04 µs</b>, six orders of magnitude apart. A Python call to your own function costs more than a builtin (step 08 measures it), but the conclusion holds: spawning is fine for a once-per-test script, never for a per-transaction model.</p>
+</div></details>
+</div>
+
+<div class="q" id="e12">
+<p><span class="n">E12 ★★★</span><b>Design.</b> Your team keeps golden models in a repo with a <code>requirements.txt</code> (numpy, scipy) and wants regressions to use exactly that environment, not whatever is installed on each machine. How do you configure the embedded interpreter, and what do you verify at time 0?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>Create a venv per checkout (<code>python3 -m venv .venv &amp;&amp; .venv/bin/pip install -r requirements.txt</code>). In <code>py_init</code>, use <code>PyConfig</code>/<code>PyInitConfig</code> with <code>executable</code> set to the <b>absolute</b> path of <code>.venv/bin/python</code> (passed as a plusarg). CPython then finds <code>pyvenv.cfg</code> and uses the venv's <code>site-packages</code>. Set <code>buffered_stdio = 0</code>; add the model directory to <code>sys.path</code> after init (not through <code>module_search_paths</code>, which replaces the stdlib path: <code>cfg_replace</code> dies with <code>Failed to import encodings module</code>). At time 0, print <code>sys.executable</code>, <code>sys.prefix != sys.base_prefix</code> and the versions of the imported model packages, and <code>$fatal</code> if the venv is not active. Measured: a plain venv makes numpy unavailable (<code>cfg_venv</code>: <code>ModuleNotFoundError</code>), which is the isolation you want; a <code>--system-site-packages</code> venv (<code>cfg_venv_sys</code>) sees the system numpy, convenient but not reproducible. Also check that the venv's Python version equals the one you linked: a venv made with 3.13 next to a simulator linked with 3.14 loads 3.14 with incompatible extension modules.</p>
+</div></details>
+</div>
+
+<h2 id="s3"><span class="no">§3 · Quiz</span>14 self-grading questions</h2>
+<p>Pick an answer and press <b>Check</b>. Every explanation covers the right answer and the tempting wrong one.</p>
+<p class="quiz-score"></p>
+
+<div class="quiz" data-answer="c">
+<p class="qq">1. You link the simulator with <code>python3-config --ldflags</code> (no <code>--embed</code>). What happens?</p>
+<label><input type="radio" value="a"> It links, but numpy fails to import at run time.</label>
+<label><input type="radio" value="b"> It links and runs, because Verilator adds libpython automatically.</label>
+<label><input type="radio" value="c"> The link fails with undefined <code>_Py_Initialize</code> and friends.</label>
+<label><input type="radio" value="d"> It compiles but <code>Python.h</code> is not found.</label>
+<div class="why">Since 3.8 <code>--ldflags</code> omits <code>-lpython3.X</code> (meant for extension modules); only <code>--embed</code> adds it. The include path comes from <code>--includes</code>/<code>--cflags</code>, so (d) is a different mistake; nothing links libpython for you (b).</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">2. A test never calls <code>Py_FinalizeEx</code>. Python printed three lines without <code>flush=True</code> and registered an <code>atexit</code> handler. Stdout goes to a file. What is in the file?</p>
+<label><input type="radio" value="a"> The three lines, at the end, and the atexit output.</label>
+<label><input type="radio" value="b"> None of the Python output, and the atexit handler did not run.</label>
+<label><input type="radio" value="c"> The three lines, but not the atexit output.</label>
+<label><input type="radio" value="d"> It depends on the size of C's stdio buffer.</label>
+<div class="why">Measured (<code>life_nofin</code>): Python's <code>sys.stdout</code> buffer is drained by Python itself, at flush or finalize. The process exits through C <code>exit()</code>, which only flushes C stdio. (d) is the right instinct for <code>$display</code> text, not for Python's buffer.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+<p class="qq">3. Why not call <code>Py_Initialize()</code> and <code>Py_FinalizeEx()</code> inside every DPI call, as the old <code>irun_tests/dpi.c</code> does?</p>
+<label><input type="radio" value="a"> It is only a style issue; the cost is negligible.</label>
+<label><input type="radio" value="b"> Because <code>Py_FinalizeEx</code> cannot be called twice.</label>
+<label><input type="radio" value="c"> Because it leaks a thread state per call.</label>
+<label><input type="radio" value="d"> It costs tens of ms per call, and C extensions such as numpy cannot be imported again after a finalize.</label>
+<div class="why">Measured: ~24 ms per cycle on an idle machine, and numpy's second import fails with <code>cannot load module more than once per process</code>. Repeated init/finalize cycles are allowed (json works 20 times), so (b) is false. The problem is cost and extension modules.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">4. <code>PySys_GetObject("path")</code> returns…</p>
+<label><input type="radio" value="a"> a borrowed reference: use it, never decref it.</label>
+<label><input type="radio" value="b"> a new reference: decref it when done.</label>
+<label><input type="radio" value="c"> a stolen reference.</label>
+<label><input type="radio" value="d"> a copy of <code>sys.path</code>.</label>
+<div class="why">The <code>sys</code> module owns the list. Decrefing it frees <code>sys.path</code> under the interpreter's feet (E3). It is the real list, not a copy, which is why <code>PyList_Insert</code> on it changes the import path.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">5. <code>basic.c</code> does <code>dir = PyUnicode_FromString(moddir); PyList_Insert(path, 0, dir); Py_DECREF(dir);</code>. Is the <code>Py_DECREF</code> correct?</p>
+<label><input type="radio" value="a"> No: <code>PyList_Insert</code> steals the reference, so this is a double free.</label>
+<label><input type="radio" value="b"> No: <code>dir</code> is borrowed.</label>
+<label><input type="radio" value="c"> Yes: <code>PyList_Insert</code> takes its own reference; ours must be released.</label>
+<label><input type="radio" value="d"> It does not matter, strings are immortal.</label>
+<div class="why"><code>PyList_Insert</code> and <code>PyList_Append</code> do not steal (only <code>PyList_SetItem</code>/<code>PyTuple_SetItem</code> do). Only interned strings are immortal; a string built at run time from a C buffer is an ordinary object.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">6. In Python 3.14, <code>Py_REFCNT(Py_None)</code> printed 3221225472 and a leak test with small ints showed no growth. Why is that dangerous?</p>
+<label><input type="radio" value="a"> Because the refcount will overflow.</label>
+<label><input type="radio" value="b"> Because immortal objects ignore INCREF/DECREF, so refcount bugs on small values are invisible and appear only with large values or fresh objects.</label>
+<label><input type="radio" value="c"> Because <code>None</code> is freed at finalize.</label>
+<label><input type="radio" value="d"> It is not dangerous: immortal objects make refcount bugs impossible.</label>
+<div class="why">PEP 683 pins the count of <code>None</code>, booleans, small ints and interned strings. Measured: <code>big_int=1</code> for 1000000, an ordinary object. Test with values that create fresh objects.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">7. A bridge function returns <code>PyUnicode_AsUTF8(r)</code> after <code>Py_DECREF(r)</code>. Most tests pass. Which test is most likely to expose the bug?</p>
+<label><input type="radio" value="a"> One that returns the same literal string every time.</label>
+<label><input type="radio" value="b"> One that calls the function once.</label>
+<label><input type="radio" value="c"> One that returns long, freshly built strings in a loop, with other Python work in between.</label>
+<label><input type="radio" value="d"> None: the simulator copies the string before the DECREF.</label>
+<div class="why">The simulator copies the return value when the import returns, which is <em>after</em> the DECREF, so (d) is wrong. A literal is interned and stays alive (a), so the bug hides. Freshly allocated strings whose memory gets reused expose it.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">8. <code>PyLong_AsLong(s)</code> was called on a <code>str</code> and the bridge ignored the <code>-1</code>. What does the next, correct, <code>PyObject_CallFunction</code> return?</p>
+<label><input type="radio" value="a"> <code>NULL</code>, with <code>SystemError: … returned a result with an exception set</code>.</label>
+<label><input type="radio" value="b"> The correct result; the old error is discarded.</label>
+<label><input type="radio" value="c"> <code>NULL</code> with the original <code>TypeError</code>.</label>
+<label><input type="radio" value="d"> The simulation aborts immediately.</label>
+<div class="why">Measured (<code>err_stale</code>): the call runs, finds an exception pending on return, and converts the situation into a <code>SystemError</code>. The bug surfaces one call late, in an innocent function. Check <code>v == -1 &amp;&amp; PyErr_Occurred()</code> after conversions.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+<p class="qq">9. The import that reports Python errors through an exported SV function must be declared…</p>
+<label><input type="radio" value="a"> <code>pure</code>, because it has no side effects in SV.</label>
+<label><input type="radio" value="b"> as a <code>task</code>.</label>
+<label><input type="radio" value="c"> nothing special; any import may call exports.</label>
+<label><input type="radio" value="d"> <code>context</code>, because it calls an exported SV function.</label>
+<div class="why">IEEE 1800 §35.5.3: only context imports may call exported subroutines (step 05). <code>pure</code> is the opposite promise. A function is enough, no time passes.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">10. On Verilator, the exported error function calls <code>$error</code> on the first Python exception. What happens by default?</p>
+<label><input type="radio" value="a"> The error is counted and the simulation continues to <code>$finish</code>.</label>
+<label><input type="radio" value="b"> The simulation stops (<code>$stop</code>, exit 1) and <code>final</code> blocks do not run.</label>
+<label><input type="radio" value="c"> The simulation stops but <code>final</code> blocks run and Python is finalized.</label>
+<label><input type="radio" value="d"> <code>$error</code> is ignored inside exported functions.</label>
+<div class="why">Measured (E8): Verilator's default error limit turns the first <code>$error</code> into a <code>$stop</code>; the run aborts without <code>final</code>. Use <code>+verilator+error+limit+N</code> or count errors in SV. (a) is the commercial-simulator default.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">11. Stdout goes to a file. The bridge calls Python <code>print(..., flush=True)</code> but never <code>fflush(stdout)</code>. Relative to earlier <code>$display</code> lines, Python's lines appear…</p>
+<label><input type="radio" value="a"> in the correct interleaved order.</label>
+<label><input type="radio" value="b"> after all <code>$display</code> lines.</label>
+<label><input type="radio" value="c"> before <code>$display</code> lines that were printed earlier.</label>
+<label><input type="radio" value="d"> not at all.</label>
+<div class="why">Measured (<code>buf_py</code>): <code>PY 0, PY 1, PY 2, SV 0, SV 1, SV 2</code>. Python writes through to fd 1 while the SV text waits in C's buffer. (b) is the no-flush case (<code>buf_none</code>).</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">12. With <code>verilator --threads 4</code> and only non-pure imports, on which thread do the DPI calls run?</p>
+<label><input type="radio" value="a"> On one thread, but not the one that ran the <code>initial</code> block and <code>Py_Initialize</code>.</label>
+<label><input type="radio" value="b"> Always on the main thread, because non-pure calls are serialized.</label>
+<label><input type="radio" value="c"> On all four threads, concurrently.</label>
+<label><input type="radio" value="d"> Verilator refuses to build non-pure DPI with <code>--threads</code>.</label>
+<div class="why">Measured (<code>th_np_safe</code>): <code>distinct_threads=1 on_init_thread=0</code>. Serialized ≠ main thread, so the GIL-unaware bridge crashes (<code>th_np</code>). Four threads appear with <code>pure</code> imports or <code>--threads-dpi all</code>.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+<p class="qq">13. Which sequence is correct for a bridge called from several threads?</p>
+<label><input type="radio" value="a"> <code>Py_Initialize</code>; in each call <code>PyGILState_Ensure/Release</code>; <code>Py_FinalizeEx</code>.</label>
+<label><input type="radio" value="b"> <code>PyEval_InitThreads</code>; <code>Py_Initialize</code>; calls as usual.</label>
+<label><input type="radio" value="c"> <code>Py_Initialize</code> on each thread before its first call.</label>
+<label><input type="radio" value="d"> <code>Py_Initialize</code>; <code>PyEval_SaveThread</code>; each call <code>PyGILState_Ensure/Release</code>; <code>PyEval_RestoreThread</code>; <code>Py_FinalizeEx</code>.</label>
+<div class="why">Without <code>PyEval_SaveThread</code> (a) the init thread keeps the GIL and workers block forever in <code>Ensure</code>. <code>PyEval_InitThreads</code> (b) is a deprecated no-op. There is one interpreter per process here; initializing per thread (c) is meaningless.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">14. You set <code>cfg.module_search_paths_set = 1</code> and append your model directory to <code>cfg.module_search_paths</code>. What happens?</p>
+<label><input type="radio" value="a"> Your directory is appended after the standard library.</label>
+<label><input type="radio" value="b"> <code>sys.path</code> becomes only your directory, and init fails with <code>Failed to import encodings module</code>.</label>
+<label><input type="radio" value="c"> The setting is ignored unless the config is isolated.</label>
+<label><input type="radio" value="d"> Init succeeds but numpy cannot be imported.</label>
+<div class="why">Measured (<code>cfg_replace</code>): setting the flag means "this is the whole path", so the stdlib is gone before init can import <code>encodings</code>. Insert into <code>sys.path</code> after init, or use <code>PYTHONPATH</code>.</div>
+</div>
+
+<h2 id="s4"><span class="no">§4 · Lab</span>Run it, predict it, check it</h2>
+<p>Everything lives in <code>tutorial/07_embedding_python/lab/</code>. One command builds 17 Verilator binaries in parallel, runs 29 experiments and asserts 71 facts:</p>
+<pre class="sv"><code>cd tutorial/07_embedding_python/lab
+python3 check.py            <span class="c"># builds + runs + asserts (about 1–3 min from scratch, seconds when cached)</span>
+python3 check.py --no-run   <span class="c"># only re-checks the logs in build/</span></code></pre>
+<div class="tbl"><table>
+<tr><th>File</th><th>Experiment</th><th>Predict before running</th></tr>
+<tr><td class="mono">basic.sv/.c</td><td>init, cached calls, every conversion, finalize</td><td>what <code>py_add(0x7fffffff, 1)</code> and <code>py_pow2(63)</code> return</td></tr>
+<tr><td class="mono">noembed (run.sh)</td><td>same sources, linked without <code>--embed</code></td><td>which symbol the linker names first</td></tr>
+<tr><td class="mono">lifecycle.sv/.c</td><td><code>+mode=fin|nofin|guard|raw|cycle</code></td><td>which runs lose the Python output; which crash</td></tr>
+<tr><td class="mono">buffering.sv/.c</td><td>flush combinations, log to file</td><td>the four line orders</td></tr>
+<tr><td class="mono">errors.sv/.c</td><td>traceback to SV, stale error, leak per call, immortals</td><td>blocks leaked per call; refcount of <code>None</code></td></tr>
+<tr><td class="mono">config.sv/.c</td><td>PyConfig vs PyInitConfig, venvs, the path trap</td><td>whether numpy imports in each venv</td></tr>
+<tr><td class="mono">threads.sv/.c</td><td>6 builds: <code>--threads</code>, <code>pure</code>, <code>--threads-dpi</code>, GIL on/off</td><td>which builds crash; how many distinct threads call</td></tr>
+<tr><td class="mono">ex/*.sv/.c, ex/py</td><td>solutions of E5, E7, E8, E10, E11</td><td>the outputs quoted in §2</td></tr>
+</table></div>
+<p>Results measured on this machine (Verilator 5.052, Python 3.14.7, macOS x86_64, log redirected to a file):</p>
+<div class="tbl"><table>
+<tr><th>Quantity</th><th class="num">Value</th><th>Source</th></tr>
+<tr><td>embedded call to a builtin</td><td class="num">0.04 µs</td><td><code>ex_spawn</code></td></tr>
+<tr><td>spawning <code>python3 -c pass</code></td><td class="num">≈ 40 ms</td><td><code>ex_spawn</code></td></tr>
+<tr><td>init + import json + finalize</td><td class="num">≈ 24 ms</td><td><code>life_cycle</code> (idle machine)</td></tr>
+<tr><td>first <code>import numpy</code></td><td class="num">80–130 ms</td><td><code>cfg_sys</code>, <code>cfg_init</code></td></tr>
+<tr><td>blocks leaked per call without DECREF (1000-element list)</td><td class="num">2</td><td><code>errors</code></td></tr>
+<tr><td><code>Py_REFCNT(None)</code>, <code>Py_REFCNT(7)</code></td><td class="num">3221225472</td><td><code>errors</code></td></tr>
+<tr><td>numpy imports after re-init</td><td class="num">1 of 3</td><td><code>life_cycle</code></td></tr>
+<tr><td>calls on the init thread, <code>--threads 4</code>, non-pure</td><td class="num">0 of 3200</td><td><code>th_np_safe</code></td></tr>
+<tr><td>distinct calling threads, <code>pure</code> or <code>--threads-dpi all</code></td><td class="num">4</td><td><code>th_pure_safe</code>, <code>th_all_safe</code></td></tr>
+</table></div>
+<p>Timings vary with machine load; <code>check.py</code> asserts orders of magnitude, not exact values. The behaviors (orders, crashes, error texts) are asserted exactly.</p>
+
+<h2 id="s5"><span class="no">§5 · Cheat sheet</span>The bridge on one page</h2>
+<div class="tbl"><table>
+<tr><th>Need</th><th>SV side</th><th>C side</th><th>Pitfall</th></tr>
+<tr><td>link</td><td>—</td><td><code>python3-config --includes</code>, <code>--embed --ldflags</code></td><td>no <code>--embed</code> → undefined <code>_Py_Initialize</code></td></tr>
+<tr><td>init</td><td><code>initial if (py_init(dir)) $fatal</code></td><td><code>Py_InitializeFromConfig</code> / <code>Py_InitializeFromInitConfig</code></td><td><code>module_search_paths_set</code> drops the stdlib</td></tr>
+<tr><td>model path</td><td><code>+pydir=</code> plusarg</td><td><code>PyList_Insert(PySys_GetObject("path"), 0, dir)</code></td><td><code>sys.path</code> is borrowed</td></tr>
+<tr><td>venv</td><td>plusarg, absolute</td><td><code>executable = …/.venv/bin/python</code></td><td>relative path → <code>RuntimeWarning</code></td></tr>
+<tr><td>call</td><td><code>import "DPI-C" function …</code></td><td>cached <code>PyObject*</code>; <code>PyObject_CallFunction(f, "ii", …)</code></td><td>never re-import per call</td></tr>
+<tr><td><code>int</code> result</td><td><code>output int</code> + status</td><td><code>PyLong_AsLongLongAndOverflow</code> + range check</td><td><code>(int)PyLong_AsLong</code> wraps silently</td></tr>
+<tr><td>unsigned arg</td><td><code>int unsigned</code></td><td>"I" / "K"</td><td>"i" makes it negative in Python</td></tr>
+<tr><td><code>string</code> result</td><td><code>function string</code></td><td>keep the <code>str</code> alive (<code>Py_XSETREF</code>)</td><td>DECREF before return = dangling</td></tr>
+<tr><td>object state</td><td><code>chandle</code></td><td>new ref from the constructor; <code>Py_DECREF</code> in free</td><td>SV owns it: free it</td></tr>
+<tr><td>errors</td><td><code>context</code> import + exported reporter</td><td><code>PyErr_GetRaisedException</code> + <code>traceback.format_exception</code></td><td>uncleared → <code>SystemError</code> next call</td></tr>
+<tr><td>output</td><td><code>$display</code></td><td><code>fflush(stdout)</code>; <code>buffered_stdio = 0</code></td><td>one-sided flush reorders the log</td></tr>
+<tr><td>threads</td><td><code>--threads</code>, <code>pure</code></td><td><code>SaveThread</code> / <code>GILState_Ensure/Release</code> / <code>RestoreThread</code></td><td>non-pure ≠ init thread: crash</td></tr>
+<tr><td>finalize</td><td><code>final py_fin();</code></td><td><code>Py_CLEAR</code> all cached refs; <code>Py_FinalizeEx</code></td><td>Verilator <code>$error</code> abort skips <code>final</code></td></tr>
+</table></div>
+<h4>Rules</h4>
+<ol>
+<li>One interpreter per process: initialize once, finalize once, at the end.</li>
+<li>Every <code>PyObject*</code> you get is new, borrowed or stolen; look it up and comment it.</li>
+<li>Every call can fail: check <code>NULL</code> / <code>-1 &amp;&amp; PyErr_Occurred()</code>, and leave the indicator clear when you return to SV.</li>
+<li>Python exceptions become text in the SV log plus a status code, never a silent default value.</li>
+<li>Narrowing happens at the DPI boundary: range-check before casting.</li>
+<li>Two buffers share fd 1: flush C before calling Python, run Python unbuffered.</li>
+<li>Any thread other than the init thread needs <code>PyGILState_Ensure</code>, and with <code>--threads</code> that is every DPI thread.</li>
+<li>Heavy imports (numpy) go in <code>py_init</code>, so their cost lands at time 0.</li>
+<li>Test with big numbers and fresh objects: immortals hide refcount bugs.</li>
+<li>Pin the environment from the command line (plusargs, venv), never from the shell.</li>
+</ol>
+<p class="foot">Sources: IEEE Std 1800-2023 clause 35 and Annex H; Spear &amp; Tumbush, <i>SystemVerilog for Verification</i> 3rd ed., §12.9 and Ex. 12.1–12.6; Python 3.14 documentation, <i>Embedding Python in Another Application</i>, <i>Python Initialization Configuration</i> (PEP 587, PEP 741), <i>Initialization, Finalization, and Threads</i>, PEP 683 (immortal objects); Verilator 5.052 manual (<code>--threads</code>, <code>--threads-dpi</code>). All measurements: <code>lab/check.py</code>.</p>
+</main>
+</div>
+</body>
+</html>

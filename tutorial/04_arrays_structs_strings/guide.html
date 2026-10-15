@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DPI-C 04: Arrays, structs, strings</title>
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../assets/guide.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/contrib/auto-render.min.js"></script>
+<script defer src="../assets/quiz.js"></script>
+<script>
+try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
+document.addEventListener('DOMContentLoaded',function(){
+  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
+  var toc=document.getElementById('toc');
+  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
+  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
+  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
+  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
+});
+function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
+function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
+</script>
+<style>
+pre.sv{font-size:13px;line-height:1.5}
+pre.sv .c{color:var(--muted);font-style:italic}
+pre.sv .k{color:var(--acc);font-weight:600}
+p code,li code,td code{overflow-wrap:anywhere}
+td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
+.navsteps{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-family:var(--font-mono);font-size:12.5px;margin:6px 0 0}
+</style>
+</head>
+<body>
+<svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-acc" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-2" d="M0,1 L10,5 L0,9 z"/></marker>
+</defs></svg>
+
+<div class="page">
+<details class="toc" id="toc"><summary>Contents</summary><nav><ol>
+<li class="grp">0 · Tutorial</li>
+<li><a href="#tutorial">The one rule</a></li>
+<li><a href="#t-fixed">0.1 Fixed-size arrays</a></li>
+<li><a href="#t-dir">0.2 Directions and copies</a></li>
+<li><a href="#t-open">0.3 Open arrays</a></li>
+<li><a href="#t-access">0.4 Reaching the elements</a></li>
+<li><a href="#t-multi">0.5 Multi-dimensional</a></li>
+<li><a href="#t-kinds">0.6 Dynamic arrays, queues, slices</a></li>
+<li><a href="#t-packed">0.7 Packed elements</a></li>
+<li><a href="#t-struct">0.8 Structs</a></li>
+<li><a href="#t-string">0.9 Strings</a></li>
+<li><a href="#t-gaps">0.10 Verilator vs the LRM</a></li>
+<li class="grp">Practice</li>
+<li><a href="#s1">1 · Objectives</a></li>
+<li><a href="#s2">2 · Exercises</a></li>
+<li><a href="#s3">3 · Quiz</a></li>
+<li><a href="#s4">4 · Lab</a></li>
+<li><a href="#s5">5 · Cheat sheet</a></li>
+</ol></nav></details>
+
+<main>
+<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
+<div class="navsteps"><a href="../03_state_and_handles/guide.html">← 03 State and handles</a><a href="../05_export_and_context/guide.html">05 Export and context →</a></div>
+<p class="kicker">DPI-C tutorial · Part A · Step 04 · Spear &amp; Tumbush §12.4–12.6</p>
+<h1>Arrays, structs and strings across the boundary</h1>
+<p class="deck">Scalars cross DPI by value. Everything bigger crosses by reference: C gets a pointer or a handle into storage that SystemVerilog owns. This step is about what that storage looks like, who may touch it, and for how long.</p>
+<p class="meta"><span>Prereqs: <a href="../02_data_types/guide.html">02 Data types</a> (svBitVecVal, aval/bval), <a href="../03_state_and_handles/guide.html">03 State and handles</a></span><span>Book pages: PDF = book + 36</span><span>Solutions are hidden: think first</span></p>
+<div class="tools"><button onclick="setAll(true)">Open all</button><button onclick="setAll(false)">Close all</button></div>
+
+<h2 id="tutorial"><span class="no">§0 · Tutorial</span>The one rule: SystemVerilog owns the storage</h2>
+<p class="lead">A golden model rarely works on one number. It takes a packet, a frame of samples, a header, a matrix of coefficients, and returns another one. In the first three steps every argument was a scalar or a packed vector of a known width. Now we pass aggregates: unpacked arrays of fixed and unknown size, packed arrays of wide elements, structs and strings.</p>
+<p>All of them obey one rule, and the rest of this page is detail around it: <b>SystemVerilog owns every byte that crosses the boundary.</b> C receives a pointer (fixed-size arrays, packed structs), a <em>handle</em> to a descriptor (open arrays) or a <code>const char*</code> (strings). That access is valid only for the duration of the call. C cannot allocate an array and give it to SV; SV cannot keep a pointer into C memory. Spear says it in one line under Sample 12.19: <em>"There is no way to allocate an array in C and reference it in SystemVerilog."</em> If C needs the data later, it copies. If SV needs C's data, C writes it into an SV-owned argument or returns a string that SV immediately copies.</p>
+<p>The second theme is <b>layout</b>. For a few types (<code>int</code>, <code>byte</code>, <code>longint</code>, <code>real</code>, packed vectors in canonical form) the C view is fixed by IEEE 1800 Annex H. For everything else (how a simulator lays out an unpacked array of <code>bit [12:0]</code>, the order of a <code>[10:1]</code> array in memory) the standard gives you <em>access functions</em> instead of a layout, and portable code uses them. The lab measures where Verilator 5.052 differs from what you might assume, and where it does not implement the standard at all (dynamic arrays, queues and unpacked structs as DPI arguments).</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 250" role="img" aria-label="During an imported call SystemVerilog keeps ownership of its variables. C receives a pointer for fixed arrays and packed structs, an svOpenArrayHandle for open arrays, and a const char pointer for strings. After return, C may not use any of them.">
+<rect class="ghost" x="10" y="10" width="330" height="230" rx="12"/><text class="ttl" x="26" y="34">SystemVerilog (owner)</text>
+<rect class="box" x="30" y="50" width="290" height="40" rx="8"/><text class="lbl" x="175" y="75">bit [31:0] d[20]  ·  RGB_T px</text>
+<rect class="box hot" x="30" y="110" width="290" height="40" rx="8"/><text class="lbl" x="175" y="135">int a[6:1][8:3]  (open formal [][])</text>
+<rect class="box soft" x="30" y="170" width="290" height="40" rx="8"/><text class="lbl" x="175" y="195">string s</text>
+<rect class="ghost" x="380" y="10" width="330" height="230" rx="12"/><text class="ttl" x="396" y="34">C (borrower, during the call)</text>
+<rect class="box" x="400" y="50" width="290" height="40" rx="8"/><text class="lbl" x="545" y="75">svBitVecVal* data</text>
+<rect class="box hot" x="400" y="110" width="290" height="40" rx="8"/><text class="lbl" x="545" y="135">svOpenArrayHandle h</text>
+<rect class="box soft" x="400" y="170" width="290" height="40" rx="8"/><text class="lbl" x="545" y="195">const char* s</text>
+<path class="e" d="M320,70 H400" marker-end="url(#ah)"/><text class="t" x="330" y="64">pointer</text>
+<path class="e hot" d="M320,130 H400" marker-end="url(#ah-acc)"/><text class="t" x="330" y="124">handle</text>
+<path class="e" d="M320,190 H400" marker-end="url(#ah)"/><text class="t" x="330" y="184">char*</text>
+</svg>
+<figcaption><b>Fig. 0.1</b>Three ways an aggregate reaches C. In each case the arrow points into SV-owned memory (or a simulator temporary), and it is only valid until the imported function returns.</figcaption>
+</figure>
+
+<!-- 0.1 -->
+<h3 id="t-fixed"><span class="no">0.1</span>Fixed-size unpacked arrays (Samples 12.18–12.21)</h3>
+<p>The simplest aggregate is an unpacked array with constant bounds in the import declaration. Annex H maps it to a C array of the element type, which C sees as a pointer to the first element. Each element is represented exactly as a scalar argument of that type would be (<a href="../02_data_types/guide.html">step 02</a>): <code>int</code> is an <code>int</code>, <code>byte</code> is a <code>char</code>, a packed <code>bit [31:0]</code> is one <code>svBitVecVal</code> word, a packed <code>logic [31:0]</code> is one <code>svLogicVecVal</code> (an <code>aval</code>/<code>bval</code> pair).</p>
+<pre class="sv"><code><span class="c">// fib.sv (Samples 12.19 / 12.21, in a module instead of a program)</span>
+<span class="k">import</span> <span class="k">&quot;DPI-C&quot;</span> <span class="k">function</span> <span class="k">void</span> fib2(<span class="k">output</span> <span class="k">bit</span>   [31:0] data[20]);
+<span class="k">import</span> <span class="k">&quot;DPI-C&quot;</span> <span class="k">function</span> <span class="k">void</span> fib4(<span class="k">output</span> <span class="k">logic</span> [31:0] data[20]);
+<span class="k">import</span> <span class="k">&quot;DPI-C&quot;</span> <span class="k">function</span> <span class="k">int</span>  sum8(<span class="k">input</span> <span class="k">int</span> v[8]);
+<span class="k">import</span> <span class="k">&quot;DPI-C&quot;</span> <span class="k">function</span> <span class="k">void</span> bytes_in(<span class="k">input</span> <span class="k">byte</span> b[4], <span class="k">output</span> <span class="k">int</span> packed_le);</code></pre>
+<pre class="sv"><code><span class="c">// fib.c (Samples 12.18 / 12.20). Verilator compiles .c as C++: wrap in extern &quot;C&quot;.</span>
+<span class="k">void</span> fib2(svBitVecVal data[20]) {          <span class="c">// [20] is documentation: C sees svBitVecVal*</span>
+  data[0] = 1;
+  data[1] = 1;
+  <span class="k">for</span> (<span class="k">int</span> i = 2; i &lt; 20; i++) data[i] = data[i-1] + data[i-2];
+}
+<span class="k">void</span> fib4(svLogicVecVal data[20]) {        <span class="c">// 4-state: write aval AND bval</span>
+  data[0].aval = 1; data[0].bval = 0;
+  data[1].aval = 1; data[1].bval = 0;
+  <span class="k">for</span> (<span class="k">int</span> i = 2; i &lt; 20; i++) {
+    data[i].aval = data[i-1].aval + data[i-2].aval;
+    data[i].bval = 0;
+  }
+}
+<span class="k">int</span>  sum8(<span class="k">const</span> <span class="k">int</span>* v)                     { <span class="k">int</span> s = 0; <span class="k">for</span> (<span class="k">int</span> i = 0; i &lt; 8; i++) s += v[i]; <span class="k">return</span> s; }
+<span class="k">void</span> bytes_in(<span class="k">const</span> <span class="k">char</span>* b, <span class="k">int</span>* packed_le) { memcpy(packed_le, b, 4); }</code></pre>
+<p>Do not guess the C prototype: Verilator writes it for you in <code>V&lt;top&gt;__Dpi.h</code> (step <a href="../01_first_call/guide.html">01</a>). For this file it generated, verbatim:</p>
+<pre class="sv"><code><span class="k">extern</span> <span class="k">void</span> bytes_in(<span class="k">const</span> <span class="k">char</span>* b, <span class="k">int</span>* packed_le);
+<span class="k">extern</span> <span class="k">void</span> fib2(svBitVecVal* data);
+<span class="k">extern</span> <span class="k">void</span> fib4(svLogicVecVal* data);
+<span class="k">extern</span> <span class="k">int</span> sum8(<span class="k">const</span> <span class="k">int</span>* v);</code></pre>
+<p>Note the <code>const</code> on <code>input</code> arrays and its absence on <code>output</code>. Include the header in your C file and the compiler checks your definition against it. The run prints:</p>
+<pre class="sv"><code>LOG fib2 d0=1 d1=1 d19=6765
+LOG fib4 d19=6765 unknown=0
+LOG sum8 sum=140
+LOG bytes_in le=44332211</code></pre>
+<p><code>bytes_in</code> shows that a <code>byte</code> array is a plain <code>char</code> array in memory, one byte per element: copying four of them into an <code>int</code> on a little-endian x86 host puts <code>b[0]</code> in the least significant byte.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 230" role="img" aria-label="Memory seen by C for three fixed arrays: bit[31:0] d[20] is 20 consecutive 32-bit svBitVecVal words; logic[31:0] d[20] is 20 consecutive aval,bval pairs of 8 bytes; byte b[4] is 4 consecutive bytes.">
+<text class="ttl" x="14" y="26">bit [31:0] d[20]  →  svBitVecVal*  (4 bytes / element)</text>
+<g><rect class="box" x="14" y="38" width="70" height="30"/><text class="mid cen" x="49" y="53">d[0]</text>
+<rect class="box" x="84" y="38" width="70" height="30"/><text class="mid cen" x="119" y="53">d[1]</text>
+<rect class="box" x="154" y="38" width="70" height="30"/><text class="mid cen" x="189" y="53">d[2]</text>
+<rect class="box soft" x="224" y="38" width="70" height="30"/><text class="mid cen" x="259" y="53">…</text>
+<rect class="box" x="294" y="38" width="70" height="30"/><text class="mid cen" x="329" y="53">d[19]</text></g>
+<text class="ttl" x="14" y="102">logic [31:0] d[20]  →  svLogicVecVal*  (aval, bval: 8 bytes / element)</text>
+<g><rect class="box" x="14" y="114" width="70" height="30"/><text class="mid cen" x="49" y="129">aval[0]</text>
+<rect class="box hot" x="84" y="114" width="70" height="30"/><text class="mid cen" x="119" y="129">bval[0]</text>
+<rect class="box" x="154" y="114" width="70" height="30"/><text class="mid cen" x="189" y="129">aval[1]</text>
+<rect class="box hot" x="224" y="114" width="70" height="30"/><text class="mid cen" x="259" y="129">bval[1]</text>
+<rect class="box soft" x="294" y="114" width="70" height="30"/><text class="mid cen" x="329" y="129">…</text></g>
+<text class="ttl" x="14" y="178">byte b[4]  →  const char*  (1 byte / element)</text>
+<g><rect class="box" x="14" y="190" width="40" height="30"/><text class="mid cen" x="34" y="205">11</text>
+<rect class="box" x="54" y="190" width="40" height="30"/><text class="mid cen" x="74" y="205">22</text>
+<rect class="box" x="94" y="190" width="40" height="30"/><text class="mid cen" x="114" y="205">33</text>
+<rect class="box" x="134" y="190" width="40" height="30"/><text class="mid cen" x="154" y="205">44</text></g>
+<text class="note" x="190" y="210">as int on x86: 0x44332211</text>
+<text class="note" x="400" y="50">C's [20] is not checked: write</text><text class="note" x="400" y="66">data[20] and you corrupt whatever</text><text class="note" x="400" y="82">the simulator put next.</text>
+<text class="note" x="400" y="128">bval: 0 = known bit. aval/bval</text><text class="note" x="400" y="144">0/1 = Z, 1/1 = X (Annex H).</text>
+</svg>
+<figcaption><b>Fig. 0.2</b>What the pointer points at. The element encoding is the scalar encoding from step 02, repeated. Nothing in the pointer tells C how many elements there are: the size is a contract between the two declarations.</figcaption>
+</figure>
+
+<div class="callout trap"><p><b>The bval you forgot.</b> In a 4-state array C must write <code>bval</code> too; uninitialized it is garbage and a commercial simulator will show X or Z. The lab's <code>fib4_bad</code> writes <code>aval = i</code> and <code>bval = 0xFFFFFFFF</code> (all X by the encoding): Verilator prints <code>d2=00000002 unknown=0</code>. It is 2-state and simply ignores <code>bval</code>. A model that "passes" on Verilator can produce X on Questa or VCS. If your model is 2-state, declare the SV side with <code>bit</code> and use <code>svBitVecVal</code>; that is the honest contract.</p></div>
+<div class="callout note" style="--c-label:'C cannot allocate'"><p>Because SV owns the storage, the size must be known on the SV side <em>before</em> the call. If the model decides how much data it produces (a decoder, a variable-length packet), split it in two calls: a query (<code>int c_len()</code>) and a fill (<code>c_fill(output … buf[])</code>), with the SV side sizing its buffer in between. Exercise 9 does it for the reverse direction.</p></div>
+
+<!-- 0.2 -->
+<h3 id="t-dir"><span class="no">0.2</span>Directions: who copies what, and when</h3>
+<p>For aggregates the direction means more than for scalars. The LRM lets the simulator pass arrays either by pointer to the actual or by pointer to a temporary that it copies in before the call and out after it. The rules C can rely on are the ones that hold in both implementations:</p>
+<ul>
+<li><b>input</b>: C may read, must not write (the prototype is <code>const</code>).</li>
+<li><b>inout</b>: C reads the current SV value and may write; whatever it does not write keeps its value.</li>
+<li><b>output</b>: the value C sees on entry is <b>undefined</b>, and after return the <b>whole</b> argument is the result. Anything C did not write is undefined too.</li>
+</ul>
+<p>The last rule bites. The lab's <code>outdir.sv</code> fills three arrays with 5, then calls a C function that writes only element 1 with 7:</p>
+<pre class="sv"><code>LOG c_sees out0=0                                  &lt;- output open array: C sees a zeroed temporary
+LOG outdir out=0,7,0 io=5,7,5 outf0_is5=0 outf1=7  &lt;- output: unwritten elements LOST; inout: kept</code></pre>
+<p>With an <code>output</code> open array Verilator hands C a zero-filled temporary and copies all of it back, so the 5s become 0. With an <code>output</code> fixed array the unwritten element came back as stack garbage (not 5; the exact value is not reproducible and the check only asserts "not 5"). With <code>inout</code> the untouched elements keep their 5. The practical rule: <b>use <code>output</code> only when C writes every element; otherwise use <code>inout</code>.</b> Exercise 10 shows a subtler version: a function that returns an error code before touching its <code>output</code> still overwrites it.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 200" role="img" aria-label="Timeline of an imported call with an array argument. For input and inout, SV values are visible to C on entry. For output, C sees an undefined value. On return, inout and output are copied back; output overwrites the whole array.">
+<line class="e" x1="40" y1="40" x2="690" y2="40"/>
+<text class="t" x="40" y="30">SV: before call</text><text class="t" x="290" y="30">C body runs</text><text class="t" x="560" y="30">SV: after return</text>
+<line class="e dash" x1="230" y1="40" x2="230" y2="190"/><line class="e dash" x1="520" y1="40" x2="520" y2="190"/>
+<text class="lbl" x="20" y="80" style="text-anchor:start">input</text>
+<path class="e" d="M110,75 H230" marker-end="url(#ah)"/><text class="note" x="250" y="80">read-only view</text><text class="note" x="560" y="80">unchanged</text>
+<text class="lbl" x="20" y="125" style="text-anchor:start">inout</text>
+<path class="e" d="M110,120 H230" marker-end="url(#ah)"/><text class="note" x="250" y="125">read + write</text>
+<path class="e hot" d="M520,120 H550" marker-end="url(#ah-acc)"/><text class="note" x="560" y="125">written elements change</text>
+<text class="lbl" x="20" y="170" style="text-anchor:start">output</text>
+<text class="note" x="110" y="170">(not copied in)</text><text class="note" x="250" y="170">undefined on entry</text>
+<path class="e hot" d="M520,165 H550" marker-end="url(#ah-acc)"/><text class="note" x="560" y="170">ALL elements replaced</text>
+</svg>
+<figcaption><b>Fig. 0.3</b>Copy-in / copy-out semantics. Whether the simulator really copies or passes a direct pointer is its business; code written to these rules works either way.</figcaption>
+</figure>
+
+<!-- 0.3 -->
+<h3 id="t-open"><span class="no">0.3</span>Open arrays: one C function for any size</h3>
+<p>A fixed-size formal ties the C code to one array size and, worse, to a layout you reverse-engineered. Spear's §12.5 calls that "fragile". The alternative is the <b>open array</b>: write the unpacked dimension(s) as <code>[]</code> in the import, and the same C function accepts any actual size and any range. C now receives an <code>svOpenArrayHandle</code>. It is not a pointer to data; it is an opaque handle to a <b>descriptor</b> that the simulator builds for this call: element type and width, number of unpacked dimensions, the declared range of each dimension, and where the data lives.</p>
+<pre class="sv"><code><span class="c">// openarr.sv (Samples 12.22 / 12.24, corrected)</span>
+<span class="k">import</span> <span class="k">&quot;DPI-C&quot;</span> <span class="k">function</span> <span class="k">void</span> fib_oa(<span class="k">output</span> <span class="k">bit</span> [31:0] data[]);   <span class="c">// one [] = 1 unpacked dim</span>
+<span class="k">import</span> <span class="k">&quot;DPI-C&quot;</span> <span class="k">function</span> <span class="k">void</span> query(<span class="k">input</span> <span class="k">int</span> a[][], <span class="k">output</span> <span class="k">int</span> q[11]);
+<span class="k">import</span> <span class="k">&quot;DPI-C&quot;</span> <span class="k">function</span> <span class="k">void</span> mydisplay(<span class="k">inout</span> <span class="k">int</span> a[][]);         <span class="c">// [][] = 2 unpacked dims</span>
+<span class="k">module</span> top;
+  <span class="k">bit</span> [31:0] fibs[20];
+  <span class="k">int</span> a[6:1][8:3];          <span class="c">// descending, not 0-based: the C side must not care</span>
+  <span class="k">int</span> up[0:2][0:3];         <span class="c">// ascending</span>
+  ...</code></pre>
+<pre class="sv"><code><span class="k">void</span> fib_oa(<span class="k">const</span> svOpenArrayHandle h) {            <span class="c">// Sample 12.23, corrected</span>
+  svBitVecVal* d = (svBitVecVal*)svGetArrayPtr(h);  <span class="c">// contiguous storage (may be NULL, see 0.4)</span>
+  <span class="k">int</span> n = svSize(h, 1);
+  d[0] = 1; d[1] = 1;
+  <span class="k">for</span> (<span class="k">int</span> i = 2; i &lt; n; i++) d[i] = d[i-1] + d[i-2];
+}</code></pre>
+<div class="callout errata"><p>Two bugs in the book's open-array example. Sample 12.22 calls <code>fib_oa(data, SIZE)</code> with two arguments but imports a one-argument function (the size travels inside the handle; the extra argument is a compile error). Sample 12.23 loops <code>for (i=2; i&lt;=svSize(data_oa,1); i++)</code>, which writes one element past the end of the array. The loop bound is <code>i &lt; svSize(h,1)</code>.</p></div>
+
+<p>The descriptor is read with the query functions of Annex H (Spear's Table 12.3). Dimensions are numbered from 1, outermost first. Here is what C sees for the two arrays above, measured:</p>
+<div class="tbl"><table>
+<tr><th>Query</th><th>Meaning</th><th class="mono">int a[6:1][8:3]</th><th class="mono">int up[0:2][0:3]</th></tr>
+<tr><td><code>svLeft(h,d)</code> / <code>svRight(h,d)</code></td><td>bounds as written in the declaration</td><td class="mono">6, 1 · 8, 3</td><td class="mono">0, 2 · 0, 3</td></tr>
+<tr><td><code>svLow(h,d)</code> / <code>svHigh(h,d)</code></td><td>min / max index: use these in loops</td><td class="mono">1, 6</td><td class="mono">0, 2</td></tr>
+<tr><td><code>svIncrement(h,d)</code></td><td>1 if left ≥ right, else −1</td><td class="mono">1</td><td class="mono">−1</td></tr>
+<tr><td><code>svSize(h,d)</code></td><td>elements in dim d (high − low + 1)</td><td class="mono">6 · 6</td><td class="mono">3 · 4</td></tr>
+<tr><td><code>svDimensions(h)</code></td><td>number of unpacked dimensions</td><td class="mono">2</td><td class="mono">2</td></tr>
+<tr><td><code>svSizeOfArray(h)</code></td><td>bytes of storage (0 if not contiguous C layout)</td><td class="mono">144</td><td class="mono">48</td></tr>
+</table></div>
+<p>The sign of <code>svIncrement</code> surprises people: it is <b>+1 for the "Verilog-style" descending range</b> <code>[6:1]</code> and −1 for <code>[0:2]</code>. Despite the name it is not the step that walks from left to right (that step is −1 for <code>[6:1]</code>); it is the Verilog notion of "is the range written big-endian". You will rarely need it: iterate from <code>svLow</code> to <code>svHigh</code> and you are always right. The sizes check out: $6 \times 6 \times 4 = 144$ bytes and $3 \times 4 \times 4 = 48$.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 240" role="img" aria-label="svOpenArrayHandle points to a descriptor built by the simulator containing element type and width, number of dimensions, the left and right bound of each dimension, and a data pointer. Query functions read the descriptor; svGetArrayPtr and svGetArrElemPtr return addresses inside the data block.">
+<rect class="box hot" x="10" y="90" width="190" height="50" rx="8"/><text class="lbl" x="105" y="112">svOpenArrayHandle h</text><text class="note mid" x="105" y="130">(opaque)</text>
+<path class="e hot" d="M200,115 H230" marker-end="url(#ah-acc)"/>
+<rect class="box" x="230" y="30" width="230" height="180" rx="10"/><text class="ttl" x="246" y="54">descriptor (per call)</text>
+<text class="t" x="246" y="80">element: int (32 bits)</text>
+<text class="t" x="246" y="102">udims = 2</text>
+<text class="t" x="246" y="124">dim 1: left 6, right 1</text>
+<text class="t" x="246" y="146">dim 2: left 8, right 3</text>
+<text class="t" x="246" y="168">C layout? yes</text>
+<text class="t" x="246" y="190">data → ●</text>
+<path class="e" d="M330,186 C380,230 470,230 510,186" marker-end="url(#ah)"/>
+<rect class="box soft" x="510" y="60" width="190" height="130" rx="10"/><text class="ttl" x="526" y="84">data (SV-owned)</text>
+<text class="t" x="526" y="110">36 ints, row-major</text><text class="t" x="526" y="132">a[1][3], a[1][4], …</text><text class="t" x="526" y="154">… a[6][8]</text>
+<text class="note" x="10" y="180">svLeft/svLow/svSize…</text><text class="note" x="10" y="198">read the descriptor</text>
+<text class="note" x="530" y="216">svGetArr*Ptr → here</text>
+</svg>
+<figcaption><b>Fig. 0.4</b>An open array is a handle to a descriptor. Queries never touch the data; element access goes through the descriptor so the C code never has to know the declared ranges.</figcaption>
+</figure>
+
+<!-- 0.4 -->
+<h3 id="t-access"><span class="no">0.4</span>Reaching the elements</h3>
+<p>Annex H offers two ways in (Spear's Table 12.4):</p>
+<ul>
+<li><code>void* svGetArrayPtr(h)</code>: the address of the whole array, <b>only</b> if the simulator stores it in the standard C layout; otherwise <code>NULL</code>. Verilator's runtime returns <code>NULL</code> when the variable is not flagged as C layout and, in the same case, <code>svSizeOfArray</code> returns 0.</li>
+<li><code>void* svGetArrElemPtr1(h, i)</code>, <code>…Ptr2(h, i, j)</code>, <code>…Ptr3</code> and the variadic <code>svGetArrElemPtr(h, i, …)</code>: the address of <b>one element</b>, addressed with the <b>SV indices</b> (6..1, 8..3 in our example). Out of range returns <code>NULL</code>.</li>
+</ul>
+<p>The element-pointer form is the portable one, because it does not assume an order in memory. How much does that matter? The lab asks Verilator where things are, for <code>int v[10:1]</code> (filled with <code>v[i] = i</code>) and for <code>a[6:1][8:3]</code> after <code>mydisplay</code> stored <code>a[i][j] = i*j</code>:</p>
+<pre class="sv"><code>LOG flat v0=1 v_last=10 v_at_low=0 m0=3 m1=4 m6=6</code></pre>
+<p>Offset 0 holds <code>v[1]</code>, the <b>low</b> index, even though the declaration starts at 10. In two dimensions the storage is row-major starting at the low corner: <code>m0 = a[1][3] = 3</code>, <code>m1 = a[1][4] = 4</code>, <code>m6 = a[2][3] = 6</code>. A C programmer who reads <code>[10:1]</code> as "element 10 comes first" is wrong in Verilator; the LRM leaves the mapping to the implementation. Write <code>svGetArrElemPtr1(h, i)</code> and you never have to know.</p>
+<pre class="sv"><code><span class="k">int</span> sum_oa(<span class="k">const</span> svOpenArrayHandle h) {             <span class="c">// any size, any range, any direction</span>
+  <span class="k">int</span> s = 0;
+  <span class="k">for</span> (<span class="k">int</span> i = svLow(h, 1); i &lt;= svHigh(h, 1); i++)
+    s += *(<span class="k">int</span>*)svGetArrElemPtr1(h, i);
+  <span class="k">return</span> s;
+}
+<span class="k">int</span> probe_oob(<span class="k">const</span> svOpenArrayHandle h) {          <span class="c">// index 0 does not exist in [10:1]</span>
+  <span class="k">return</span> svGetArrElemPtr1(h, 0) == NULL ? -1 : 0;
+}</code></pre>
+<pre class="sv"><code>LOG sum_oa fixed=55
+%Warning: DPI svOpenArrayHandle function index 1 out of bounds; 0 outside [10:1].
+LOG oob ret=-1</code></pre>
+<div class="callout trap"><p><b>The 0-based reflex.</b> <code>for (i = 0; i &lt; svSize(h,1); i++) svGetArrElemPtr1(h, i)</code> is the most common open-array bug: correct for <code>int a[10]</code>, a <code>NULL</code> dereference for <code>int a[10:1]</code> (index 0 does not exist). In the lab (<code>ex/bug_loop</code>) the simulator dies with SIGSEGV (exit code 139) before printing anything. The loop variable of an open-array loop is an <b>SV index</b>: start at <code>svLow</code>, stop at <code>svHigh</code>.</p></div>
+<div class="callout note" style="--c-label:'Cost'"><p>Each <code>svGetArrElemPtr*</code> call walks the descriptor and bounds-checks every index. For a 1 k-element golden-model loop that is noise; for 1 M elements called every clock it is not. When it matters, check once that <code>svGetArrayPtr(h)</code> is non-<code>NULL</code> and the element type is a C type (<code>int</code>, <code>byte</code>, <code>longint</code>, <code>real</code>), then index the flat block yourself from <code>svLow</code>, with a fallback to element access. Step <a href="../06_golden_model_c/guide.html">06</a> measures the cost per call.</p></div>
+
+<!-- 0.5 -->
+<h3 id="t-multi"><span class="no">0.5</span>Multi-dimensional open arrays (Samples 12.24–12.25)</h3>
+<p>Each <code>[]</code> in the formal is one unpacked dimension. The actual must have the same number of unpacked dimensions; their sizes and ranges are free. Spear's example walks a 2-D array with <code>svLow</code>/<code>svHigh</code> and writes it back through <code>inout</code>:</p>
+<pre class="sv"><code><span class="k">void</span> mydisplay(<span class="k">const</span> svOpenArrayHandle h) {         <span class="c">// Sample 12.25 (io_printf -&gt; printf)</span>
+  <span class="k">for</span> (<span class="k">int</span> i = svLow(h, 1); i &lt;= svHigh(h, 1); i++)
+    <span class="k">for</span> (<span class="k">int</span> j = svLow(h, 2); j &lt;= svHigh(h, 2); j++) {
+      <span class="k">int</span>* a = (<span class="k">int</span>*)svGetArrElemPtr2(h, i, j);     <span class="c">// SV indices, both dimensions</span>
+      *a = i * j;
+    }
+}</code></pre>
+<p>SV filled <code>a[i][j] = i + j</code> before the call; the C side saw <code>a[6][3] = 9</code> and replaced every element with <code>i*j</code>; back in SV, <code>a[6][3] = 18</code>, <code>a[1][3] = 3</code>, <code>a[4][8] = 32</code>. This is also the answer to Spear's <b>Ex. 12.7</b> (what do the query functions return for Sample 12.24): <code>svLeft(h,1)=6</code>, <code>svLeft(h,2)=8</code>, <code>svRight(h,1)=1</code>, <code>svRight(h,2)=3</code>, <code>svSize(h,1)=6</code>, <code>svSize(h,2)=6</code>, <code>svDimensions(h)=2</code>, <code>svSizeOfArray(h)=144</code>; all measured in the table of 0.3.</p>
+<p>Passing a 2-D array to a 1-D open formal (or the opposite) is a compile-time mismatch. Calling <code>svGetArrElemPtr1</code> on a 2-D handle is caught at run time: Verilator warns "called on 2 dimensional array using 1 dimensional function" and returns <code>NULL</code>.</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 220" role="img" aria-label="Index map of int a[6:1][8:3]: 6 rows indexed 1 to 6, 6 columns indexed 3 to 8. In Verilator the flat storage starts at a[1][3], then a[1][4], continuing along the second dimension; a[2][3] is at offset 6.">
+<text class="ttl" x="14" y="24">int a[6:1][8:3] in Verilator's flat storage (offsets)</text>
+<text class="t mid" x="60" y="52">j=3</text><text class="t mid" x="120" y="52">4</text><text class="t mid" x="180" y="52">5</text><text class="t mid" x="240" y="52">6</text><text class="t mid" x="300" y="52">7</text><text class="t mid" x="360" y="52">8</text>
+<g>
+<text class="t" x="0" y="80">i=1</text>
+<rect class="box hot" x="32" y="62" width="56" height="28"/><text class="mid cen" x="60" y="76">0</text>
+<rect class="box hot" x="92" y="62" width="56" height="28"/><text class="mid cen" x="120" y="76">1</text>
+<rect class="box" x="152" y="62" width="56" height="28"/><text class="mid cen" x="180" y="76">2</text>
+<rect class="box" x="212" y="62" width="56" height="28"/><text class="mid cen" x="240" y="76">3</text>
+<rect class="box" x="272" y="62" width="56" height="28"/><text class="mid cen" x="300" y="76">4</text>
+<rect class="box" x="332" y="62" width="56" height="28"/><text class="mid cen" x="360" y="76">5</text>
+<text class="t" x="0" y="112">i=2</text>
+<rect class="box hot" x="32" y="94" width="56" height="28"/><text class="mid cen" x="60" y="108">6</text>
+<rect class="box" x="92" y="94" width="56" height="28"/><text class="mid cen" x="120" y="108">7</text>
+<rect class="box soft" x="152" y="94" width="236" height="28"/><text class="mid cen" x="270" y="108">8 … 11</text>
+<text class="t" x="0" y="146">…</text>
+<rect class="box soft" x="32" y="128" width="356" height="28"/><text class="mid cen" x="210" y="142">12 … 29</text>
+<text class="t" x="0" y="180">i=6</text>
+<rect class="box soft" x="32" y="162" width="296" height="28"/><text class="mid cen" x="180" y="176">30 … 34</text>
+<rect class="box" x="332" y="162" width="56" height="28"/><text class="mid cen" x="360" y="176">35</text>
+</g>
+<text class="note" x="420" y="80">measured: m0 = a[1][3] = 3</text>
+<text class="note" x="420" y="100">m1 = a[1][4] = 4</text>
+<text class="note" x="420" y="120">m6 = a[2][3] = 6</text>
+<text class="note" x="420" y="160">svGetArrElemPtr2(h, i, j)</text>
+<text class="note" x="420" y="180">hides this map: use it.</text>
+</svg>
+<figcaption><b>Fig. 0.5</b>Row-major from the low corner. The declared direction (<code>[6:1]</code>, <code>[8:3]</code>) does not change the memory order in Verilator; the LRM does not promise this order, so only code using the access functions is portable.</figcaption>
+</figure>
+
+<!-- 0.6 -->
+<h3 id="t-kinds"><span class="no">0.6</span>Dynamic arrays, queues and slices as actuals</h3>
+<p>IEEE 1800-2023 (clause 35, open arrays) accepts dynamic arrays and queues, not only fixed-size arrays, as the actual of an open-array formal (associative arrays are excluded). That is the main reason open arrays exist in a testbench: a packet is usually a <code>byte payload[]</code> or a <code>byte q[$]</code>. Verilator 5.052 implements only fixed-size actuals. The lab builds the same call with four actuals:</p>
+<div class="tbl"><table>
+<tr><th>Actual passed to <code>input int a[]</code></th><th>Verilator 5.052</th></tr>
+<tr><td><code>int a[4]</code> (fixed)</td><td>works (<code>sum=10</code>)</td></tr>
+<tr><td><code>int a[]</code> (dynamic)</td><td class="mono">%Error-UNSUPPORTED: Unsupported: DPI argument of type DYNARRAYDTYPE</td></tr>
+<tr><td><code>int a[$]</code> (queue)</td><td class="mono">%Error-UNSUPPORTED: Unsupported: DPI argument of type QUEUEDTYPE</td></tr>
+<tr><td><code>fixed4[1:2]</code> (slice)</td><td class="mono">%Error: Internal: Unexpected Call</td></tr>
+</table></div>
+<p>Commercial simulators accept all four. On Verilator the workaround is to move the data through a fixed-size buffer and pass the count explicitly; a wrapper function in SV keeps the call sites clean (Exercise 9 sums a 1000-element dynamic array through a 256-element chunk buffer and gets 499500, like <code>d.sum()</code>). It costs one copy, which is what a commercial simulator usually does internally anyway.</p>
+<div class="callout asic" style="--c-label:'In Verilator'"><p>If you write a golden model meant to be shared with a team running Questa or VCS, keep the C signature as an open array (<code>input byte data[]</code>) and put the Verilator-specific chunking in an SV wrapper under <code>`ifdef VERILATOR</code>. The C code does not change, and on the commercial simulator you call it directly with the dynamic array.</p></div>
+
+<!-- 0.7 -->
+<h3 id="t-packed"><span class="no">0.7</span>Packed elements: one packed dimension of any width (Samples 12.26–12.27)</h3>
+<p>An open array has exactly one <b>packed</b> dimension (the element's bits) plus one or more unpacked ones. The actual may have several packed dimensions as long as they flatten to the same total width: Spear passes <code>bit [1:0][0:3][6:-1] bpack[9:1]</code> (2·4·8 = 64 bits) to a <code>bit [63:0] b64[]</code> formal.</p>
+<pre class="sv"><code><span class="k">void</span> view_pack(<span class="k">const</span> svOpenArrayHandle h) {         <span class="c">// Sample 12.27, corrected</span>
+  <span class="k">for</span> (<span class="k">int</span> i = svLow(h, 1); i &lt;= svHigh(h, 1); i++) {   <span class="c">// book: i &lt; svHigh -&gt; skips bpack[9]</span>
+    <span class="k">unsigned</span> <span class="k">long</span> <span class="k">long</span> v = *(<span class="k">unsigned</span> <span class="k">long</span> <span class="k">long</span>*)svGetArrElemPtr1(h, i);
+    printf(&quot;C: b64[%d]=%016llx\n&quot;, i, v);
+  }
+}</code></pre>
+<pre class="sv"><code>LOG sv bpack2=1234567890abcdef bpack2_0=90abcdef bpack2_0_0=90
+LOG c b64_1=0000000000000001
+LOG c b64_2=1234567890abcdef
+LOG c b64_9=0000000000000009</code></pre>
+<div class="callout errata"><p>Sample 12.27 loops <code>i &lt; svHigh(h,1)</code>: with <code>bpack[9:1]</code> it prints elements 1 to 8 and never reaches 9. The bound must be <code>&lt;=</code>. (Its sibling Sample 12.23 has the opposite bug, one past the end: these two together are the best argument for always writing <code>svLow</code>…<code>&lt;= svHigh</code>.)</p></div>
+
+<p>Reading a 64-bit element through an <code>unsigned long long*</code> works because Verilator stores a 64-bit element as a 64-bit integer. That is an accident of this element width. Annex H defines a <b>canonical</b> representation for packed data (<code>svBitVecVal</code> words, 32 bits each, least significant word first) and says the simulator's own storage of a packed element is <b>implementation-specific</b>. The lab asks Verilator how many bytes each element really takes:</p>
+<div class="tbl"><table>
+<tr><th>Element type</th><th>Canonical (svBitVecVal words)</th><th>Verilator storage (measured)</th></tr>
+<tr><td><code>bit [7:0]</code></td><td>4 bytes (1 word)</td><td><b>1 byte</b></td></tr>
+<tr><td><code>bit [12:0]</code></td><td>4 bytes (1 word)</td><td><b>2 bytes</b></td></tr>
+<tr><td><code>bit [63:0]</code></td><td>8 bytes (2 words)</td><td>8 bytes</td></tr>
+<tr><td><code>bit [99:0]</code></td><td>16 bytes (4 words)</td><td>16 bytes</td></tr>
+</table></div>
+<p>So the "obvious" code below is wrong for anything under 33 bits. With <code>b8 = '{11, 22, 33, 44}</code> it returns <code>44332211</code>: it read four 1-byte elements as one word.</p>
+<pre class="sv"><code><span class="k">int</span> raw8(<span class="k">const</span> svOpenArrayHandle b) {               <span class="c">// BUG: assumes canonical layout</span>
+  <span class="k">return</span> *(svBitVecVal*)svGetArrElemPtr1(b, 0);    <span class="c">// Verilator: 4 elements at once -&gt; 0x44332211</span>
+}</code></pre>
+<p>The portable path copies an element into (or out of) canonical form, whatever the simulator does internally:</p>
+<pre class="sv"><code>svBitVecVal e[4];                                   <span class="c">// 100 bits -&gt; 4 words, LSW first</span>
+svGetBitArrElem1VecVal(e, h, i);                    <span class="c">// copy element i OUT, canonical</span>
+svPutBitArrElem1VecVal(h, e, i);                    <span class="c">// copy element i IN</span>
+svGetLogicArrElem1VecVal(&amp;lv, h, i);                <span class="c">// 4-state flavor: svLogicVecVal</span>
+svBit b = svGetBitArrElem1(h, i);                   <span class="c">// 1-bit elements: bit m[]</span></code></pre>
+<p>The lab sums three 100-bit elements with a 32-bit carry chain over the canonical words and gets <code>3ffffffff0000000100000002</code>, identical to SV's own <code>w[0]+w[1]+w[2]</code>; <code>svPutBitArrElem1VecVal</code> writes <code>f0000000000000000cafef00d</code> into <code>w[1]</code>; and <code>svGetLogicArrElem1VecVal</code> on a <code>logic [7:0]</code> element returns <code>aval=a5</code> with <code>bval</code> overwritten to 0 (the lab pre-poisons it with <code>0xDEAD</code>).</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 210" role="img" aria-label="bit[7:0] b8[4] holding 11, 22, 33, 44. Verilator stores the four elements in four consecutive bytes. The canonical form would use one 32-bit word per element. Reading the first element as an svBitVecVal word on Verilator's storage returns 0x44332211.">
+<text class="ttl" x="14" y="24">bit [7:0] b8[4] = '{11, 22, 33, 44}</text>
+<text class="t" x="14" y="56">Verilator storage</text>
+<rect class="box hot" x="160" y="40" width="44" height="28"/><text class="mid cen" x="182" y="54">11</text>
+<rect class="box hot" x="204" y="40" width="44" height="28"/><text class="mid cen" x="226" y="54">22</text>
+<rect class="box hot" x="248" y="40" width="44" height="28"/><text class="mid cen" x="270" y="54">33</text>
+<rect class="box hot" x="292" y="40" width="44" height="28"/><text class="mid cen" x="314" y="54">44</text>
+<path class="e hot" d="M160,82 H336" marker-start="url(#ah-acc)" marker-end="url(#ah-acc)"/><text class="note" x="350" y="86">*(svBitVecVal*)ptr reads 4 bytes = 0x44332211  ✗</text>
+<text class="t" x="14" y="136">canonical copy</text>
+<rect class="box" x="160" y="120" width="176" height="28"/><text class="mid cen" x="248" y="134">00 00 00 11</text>
+<rect class="box soft" x="336" y="120" width="176" height="28"/><text class="mid cen" x="424" y="134">00 00 00 22</text>
+<rect class="box soft" x="512" y="120" width="176" height="28"/><text class="mid cen" x="600" y="134">…</text>
+<text class="note" x="160" y="176">svGetBitArrElem1VecVal(&amp;w, h, 0) → w = 0x00000011  ✓</text>
+<text class="note" x="160" y="196">(the copy functions translate; the raw pointer does not)</text>
+</svg>
+<figcaption><b>Fig. 0.6</b>Native vs canonical. For packed elements, a raw element pointer is only safe when the element is a C type (<code>byte</code>, <code>shortint</code>, <code>int</code>, <code>longint</code>) or when you checked the width. The <code>Get/Put…VecVal</code> functions are always safe.</figcaption>
+</figure>
+
+<!-- 0.8 -->
+<h3 id="t-struct"><span class="no">0.8</span>Structs (Samples 12.28–12.29)</h3>
+<p>A <b>packed</b> struct is, for DPI, just a packed vector of its total width: it crosses as <code>svBitVecVal*</code> (or <code>svLogicVecVal*</code> if any member is 4-state) in canonical form. The first member declared occupies the <b>most</b> significant bits. Spear's pixel <code>struct packed { bit [7:0] r, g, b; }</code> is 24 bits with <code>r</code> in [23:16], <code>g</code> in [15:8], <code>b</code> in [7:0], all inside word 0.</p>
+<pre class="sv"><code><span class="k">typedef</span> <span class="k">struct</span> { <span class="k">unsigned</span> <span class="k">char</span> b, g, r; } *p_rgb;   <span class="c">// Sample 12.28: overlay, reversed order</span>
+<span class="k">void</span> invert(svBitVecVal* v) {
+  p_rgb rgb = (p_rgb)v;                             <span class="c">// little-endian: byte 0 = bits [7:0] = b</span>
+  rgb-&gt;r = ~rgb-&gt;r; rgb-&gt;g = ~rgb-&gt;g; rgb-&gt;b = ~rgb-&gt;b;
+}
+<span class="k">void</span> invert_bits(svBitVecVal* v) { *v = ~*v &amp; 0x00FFFFFFu; }   <span class="c">// portable: shifts and masks</span></code></pre>
+<pre class="sv"><code>LOG invert r=ed g=cb b=a9          &lt;- 12,34,56 inverted (book version, x86)
+LOG invert_bits r=12 g=34 b=56     &lt;- inverted back (portable version)</code></pre>
+<p>The book's overlay works, and the book is honest about why: the struct lists the bytes backwards because x86 is little-endian. It is still a trap: it breaks on a big-endian host, and for a struct wider than 32 bits it depends on how fields straddle 32-bit words. The robust method treats the struct as a bit vector and extracts fields by bit position, with shifts or with Annex H's part-select helpers <code>svGetPartselBit(dst, src, lsb, width)</code> / <code>svPutPartselBit(dst, value, lsb, width)</code> (width ≤ 32).</p>
+<pre class="sv"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="k">packed</span> { <span class="k">bit</span> [47:0] dst, src; <span class="k">bit</span> [15:0] etype; } eth_hdr_t;   <span class="c">// 112 bits</span>
+<span class="k">import</span> <span class="k">&quot;DPI-C&quot;</span> <span class="k">function</span> <span class="k">int</span>  etype_of(<span class="k">input</span> eth_hdr_t h);    <span class="c">// C: const svBitVecVal* h (4 words)</span>
+<span class="k">import</span> <span class="k">&quot;DPI-C&quot;</span> <span class="k">function</span> <span class="k">void</span> make_hdr(<span class="k">output</span> eth_hdr_t h);</code></pre>
+<pre class="sv"><code><span class="k">int</span> etype_of(<span class="k">const</span> svBitVecVal* h) { svBitVecVal e; svGetPartselBit(&amp;e, h, 0, 16); <span class="k">return</span> e; }
+<span class="k">void</span> make_hdr(svBitVecVal* h) {                     <span class="c">// dst=[111:64] src=[63:16] etype=[15:0]</span>
+  svPutPartselBit(h, 0x86DD,      0, 16);
+  svPutPartselBit(h, 0xA0A0A0A0, 16, 32);  svPutPartselBit(h, 0xB0B0,     48, 16);
+  svPutPartselBit(h, 0x55667788, 64, 32);  svPutPartselBit(h, 0x1122,     96, 16);
+}</code></pre>
+<pre class="sv"><code>LOG etype c=00000800
+LOG make_hdr dst=112255667788 src=b0b0a0a0a0a0 etype=86dd</code></pre>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 200" role="img" aria-label="A 112-bit packed struct eth_hdr_t mapped to four 32-bit svBitVecVal words. etype occupies bits 15 to 0 of word 0; src spans bits 63 to 16, across word 0 and word 1; dst spans bits 111 to 64, across word 2 and word 3 which is only partly used.">
+<text class="ttl" x="14" y="24">eth_hdr_t (112 bits) as svBitVecVal h[4]</text>
+<text class="t mid" x="110" y="52">h[3]: bits 127..96</text><text class="t mid" x="280" y="52">h[2]: 95..64</text><text class="t mid" x="450" y="52">h[1]: 63..32</text><text class="t mid" x="620" y="52">h[0]: 31..0</text>
+<rect class="box soft" x="30" y="62" width="80" height="34"/><text class="mid cen" x="70" y="79">unused</text>
+<rect class="box hot" x="110" y="62" width="80" height="34"/><text class="mid cen" x="150" y="79">dst hi 16</text>
+<rect class="box hot" x="200" y="62" width="160" height="34"/><text class="mid cen" x="280" y="79">dst lo 32</text>
+<rect class="box" x="370" y="62" width="160" height="34"/><text class="mid cen" x="450" y="79">src hi 32</text>
+<rect class="box" x="540" y="62" width="80" height="34"/><text class="mid cen" x="580" y="79">src lo 16</text>
+<rect class="box soft" x="620" y="62" width="80" height="34"/><text class="mid cen" x="660" y="79">etype</text>
+<text class="note" x="30" y="130">First member declared (dst) = most significant bits. Fields straddle words:</text>
+<text class="note" x="30" y="150">src = bits [63:16] lives in h[1] and the top half of h[0].</text>
+<text class="note" x="30" y="170">Extract by bit position (svGetPartselBit), never by C struct overlay.</text>
+</svg>
+<figcaption><b>Fig. 0.7</b>A packed struct is a bit vector in canonical form. Word boundaries do not respect field boundaries, which is why a C struct overlay only works for small, aligned cases like Spear's 24-bit pixel.</figcaption>
+</figure>
+
+<p><b>Unpacked</b> structs are different: the LRM allows them as DPI arguments when every member is a DPI-compatible type, mapped to a C struct with the same members (and the C compiler's padding). Verilator does not implement it:</p>
+<pre class="sv"><code>%Error-UNSUPPORTED: structs.sv:10:50: Unsupported: DPI argument of type REFDTYPE &#x27;ups_t&#x27;</code></pre>
+<p>Use a packed struct (a bit vector), or pass the members as separate arguments. Classes never cross: Spear's §12.6 already says to pack a class into a struct and unpack it on return (Sample 12.29's <code>pack()</code>/<code>unpack()</code> methods); that remains the pattern, and in UVM the <code>pack_ints</code>/<code>unpack_ints</code> field automation does the same job.</p>
+
+<!-- 0.9 -->
+<h3 id="t-string"><span class="no">0.9</span>Strings: in, out, returned (Samples 12.30–12.31)</h3>
+<p>An SV <code>string</code> is a dynamic object in the simulator's heap; C sees it as a NUL-terminated <code>const char*</code>. The generated prototypes tell the whole story:</p>
+<pre class="sv"><code><span class="k">extern</span> <span class="k">int</span> c_strlen(<span class="k">const</span> <span class="k">char</span>* s);                 <span class="c">// input string</span>
+<span class="k">extern</span> <span class="k">const</span> <span class="k">char</span>* hex_static(<span class="k">int</span> v);               <span class="c">// function string</span>
+<span class="k">extern</span> <span class="k">void</span> name_of(<span class="k">int</span> code, <span class="k">const</span> <span class="k">char</span>** name);   <span class="c">// output string</span>
+<span class="k">extern</span> <span class="k">void</span> upcase(<span class="k">const</span> <span class="k">char</span>** s);                 <span class="c">// inout string</span></code></pre>
+<p>The ownership rules from Annex H, which every example in the lab follows:</p>
+<ul>
+<li><b>input</b>: the pointer belongs to SV and is valid only during the call. C must not free it, must not write through it, and must <b>copy</b> the text if it needs it after returning (<code>keep()</code> uses <code>strdup</code>; SV then reassigns its variable and <code>kept()</code> still returns <code>first</code>).</li>
+<li><b>returned</b> and <b>output</b>: C provides the pointer and keeps owning the memory; SV copies the characters into its own string and never frees C's pointer. So C must return memory that is still alive after the function returns: a string literal, a <code>static</code> buffer, or the heap. Never a local array.</li>
+<li><b>inout</b>: C reads <code>*s</code> (SV's text) and, to change it, stores a <b>new</b> pointer in <code>*s</code>; SV copies from there. C never writes into SV's buffer.</li>
+</ul>
+<pre class="sv"><code><span class="k">const</span> <span class="k">char</span>* hex_static(<span class="k">int</span> v) {                     <span class="c">// Sample 12.30: a static buffer is alive after return</span>
+  <span class="k">static</span> <span class="k">char</span> s[12];
+  snprintf(s, <span class="k">sizeof</span> s, &quot;%08x&quot;, v);
+  <span class="k">return</span> s;
+}
+<span class="k">void</span> name_of(<span class="k">int</span> code, <span class="k">const</span> <span class="k">char</span>** name) {         <span class="c">// output: point at long-lived storage</span>
+  <span class="k">static</span> <span class="k">const</span> <span class="k">char</span>* names[] = {&quot;IDLE&quot;, &quot;BUSY&quot;, &quot;DONE&quot;};
+  *name = (code &gt;= 0 &amp;&amp; code &lt; 3) ? names[code] : &quot;???&quot;;
+}</code></pre>
+<p>Spear worries (before Sample 12.31) that a <code>static</code> buffer breaks when one statement calls the function twice, e.g. <code>$display(print(a), print(b))</code>: if the simulator kept the pointers instead of copying, both would show the second result. His fix is a ring of buffers. Verilator copies a returned string into a <code>std::string</code> immediately, so even the single static buffer works there:</p>
+<pre class="sv"><code>LOG static_two a=00001111 b=00002222     &lt;- two calls in one $display, one static buffer
+LOG ring a=00000001 b=00000002           &lt;- Sample 12.31&#x27;s ring buffer, same result</code></pre>
+<p>Do not rely on that if the code has to run elsewhere: when the copy happens is an implementation detail, Spear wrote Sample 12.31 because he met simulators where it mattered, and a ring of N buffers costs nothing. The real trap is the local array:</p>
+<pre class="sv"><code><span class="k">const</span> <span class="k">char</span>* to_hex(<span class="k">int</span> v) {                         <span class="c">// ex/bug_str.c</span>
+  <span class="k">char</span> s[12];                                       <span class="c">// dies when the function returns</span>
+  snprintf(s, <span class="k">sizeof</span> s, &quot;%08x&quot;, v);
+  <span class="k">return</span> s;
+}</code></pre>
+<p>clang catches it at build time: <code>warning: address of stack memory associated with local variable 's' returned [-Wreturn-stack-address]</code>. Verilator shows C compiler warnings only in its build log, so read it (or add <code>-CFLAGS -Werror=return-stack-address</code>).</p>
+
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 220" role="img" aria-label="Lifetime of string pointers. An input string pointer is valid only from call to return. A returned string must still be valid at return, when SV copies it; static or heap storage works, a stack buffer does not. To keep an input string, C copies it with strdup.">
+<line class="e" x1="40" y1="40" x2="690" y2="40"/>
+<line class="e dash" x1="200" y1="30" x2="200" y2="210"/><line class="e dash" x1="470" y1="30" x2="470" y2="210"/>
+<text class="t" x="150" y="28">call</text><text class="t" x="420" y="28">return</text>
+<text class="lbl" x="20" y="74" style="text-anchor:start">input</text>
+<rect class="box" x="200" y="60" width="270" height="24" rx="4"/><text class="mid cen" x="335" y="72">const char* s valid</text>
+<text class="note" x="490" y="76">dangling: copy before return</text>
+<text class="lbl" x="20" y="120" style="text-anchor:start">return</text>
+<rect class="box hot" x="200" y="106" width="300" height="24" rx="4"/><text class="mid cen" x="350" y="118">static / heap buffer</text>
+<path class="e hot" d="M470,140 V160 H560" marker-end="url(#ah-acc)"/><text class="note" x="566" y="164">SV copies here</text>
+<text class="lbl" x="20" y="196" style="text-anchor:start">stack</text>
+<rect class="box soft" x="200" y="182" width="200" height="24" rx="4"/><text class="mid cen" x="300" y="194">char s[12]</text>
+<text class="note" x="410" y="198">gone before the copy  ✗</text>
+</svg>
+<figcaption><b>Fig. 0.8</b>Who keeps the bytes alive. Input strings: SV, until return. Returned and output strings: C, at least until SV has copied them.</figcaption>
+</figure>
+
+<!-- 0.10 -->
+<h3 id="t-gaps"><span class="no">0.10</span>Verilator 5.052 vs the LRM, for aggregates</h3>
+<div class="tbl"><table>
+<tr><th>Feature (IEEE 1800-2023 cl. 35 / Annex H)</th><th>Verilator 5.052 (measured)</th></tr>
+<tr><td>Fixed-size unpacked arrays, all element types</td><td>yes</td></tr>
+<tr><td>Open arrays from fixed-size actuals, 1–3 dims, all query functions</td><td>yes</td></tr>
+<tr><td>Dynamic array / queue / slice as open-array actual</td><td><b>no</b> (UNSUPPORTED / internal error)</td></tr>
+<tr><td><code>svGetArrayPtr</code>, <code>svSizeOfArray</code></td><td>yes; <code>NULL</code> / 0 if not C layout</td></tr>
+<tr><td>Element storage of packed elements</td><td>native: 1/2/4/8 bytes up to 64 bits, 32-bit words above</td></tr>
+<tr><td><code>svGet/PutBitArrElem*VecVal</code>, <code>svGet/PutLogicArrElem*VecVal</code></td><td>yes (logic: <code>bval</code> always 0)</td></tr>
+<tr><td>4-state values (<code>bval</code>)</td><td>ignored on input to SV, 0 on output to C</td></tr>
+<tr><td>Packed structs</td><td>yes (bit vector)</td></tr>
+<tr><td>Unpacked structs</td><td><b>no</b> (UNSUPPORTED REFDTYPE)</td></tr>
+<tr><td>Strings: input / output / inout / return</td><td>yes; returned string copied at once</td></tr>
+<tr><td><code>output</code> array, unwritten elements</td><td>open array: 0; fixed array: garbage</td></tr>
+</table></div>
+<div class="callout hv"><p>The pattern that survives every simulator: <b>open arrays of C-compatible element types</b> (<code>byte</code>, <code>int</code>, <code>longint</code>, <code>real</code>) for bulk data, accessed with <code>svLow</code>/<code>svHigh</code>/<code>svGetArrElemPtr1</code>; <b>packed vectors and packed structs</b> for headers and wide words, accessed with canonical <code>svBitVecVal</code> words and part-selects; <b>strings</b> that C copies on the way in and returns from static or heap storage. Step <a href="../06_golden_model_c/guide.html">06</a> builds the golden model with exactly these pieces, and step <a href="../08_python_golden_model/guide.html">08</a> passes the same arrays to Python.</p></div>
+
+<h2 id="s1"><span class="no">§1 · Objectives</span>What you can do after this step</h2>
+<ul>
+<li>Write the import and the C prototype for fixed-size arrays of any element type, and say what the C pointer points at (Fig. 0.2).</li>
+<li>Choose <code>input</code> / <code>inout</code> / <code>output</code> for an array knowing exactly what C sees on entry and what SV gets back.</li>
+<li>Write C code for an open array that works for any size, any range, any direction (<code>svLow</code>…<code>svHigh</code>, <code>svGetArrElemPtr*</code>), and predict every query function for a given declaration.</li>
+<li>Explain why a raw element pointer is unsafe for packed elements narrower than 33 bits in Verilator, and use the canonical <code>Get/Put…VecVal</code> copies instead.</li>
+<li>Pass packed structs of any width and extract fields by bit position; know that Verilator rejects unpacked structs.</li>
+<li>Pass strings in all directions without dangling pointers or leaks.</li>
+<li>Work around Verilator's missing support for dynamic arrays and queues as open-array actuals.</li>
+</ul>
+<p>Prerequisites: <a href="../02_data_types/guide.html">02</a> (canonical <code>svBitVecVal</code>/<code>svLogicVecVal</code>, type table) and <a href="../03_state_and_handles/guide.html">03</a> (C-side state and lifetimes).</p>
+
+<h2 id="s2"><span class="no">§2 · Exercises</span>12 graded exercises, with solutions</h2>
+<p>★ basic · ★★ intermediate · ★★★ real design. Every solution with code is in <code>lab/ex/</code> and checked by <code>check.py</code>; the numbers quoted come from the run.</p>
+
+<div class="q">
+<p><span class="n">E1 ★</span><b>Write.</b> A C function <code>ex1_sum</code> that returns the sum (as <code>longint</code>) of an <code>int</code> open array of any size and range. Test it with <code>int a10[10:1]</code> (<code>a10[i] = i</code>) and <code>int a37[3:7]</code> (<code>a37[i] = -i</code>).</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="k">import</span> <span class="k">&quot;DPI-C&quot;</span> <span class="k">function</span> <span class="k">longint</span> ex1_sum(<span class="k">input</span> <span class="k">int</span> a[]);</code></pre>
+<pre class="sv"><code><span class="k">long</span> <span class="k">long</span> ex1_sum(<span class="k">const</span> svOpenArrayHandle h) {
+  <span class="k">long</span> <span class="k">long</span> s = 0;
+  <span class="k">for</span> (<span class="k">int</span> i = svLow(h, 1); i &lt;= svHigh(h, 1); i++) s += *(<span class="k">int</span>*)svGetArrElemPtr1(h, i);
+  <span class="k">return</span> s;
+}</code></pre>
+<p>Result: <code>a10=55 a37=-25</code>. <b>Lesson:</b> <code>longint</code> maps to <code>long long</code> (int64); the loop never mentions 0 or the declared direction.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E2 ★</span><b>Predict.</b> <code>bit [7:0] m[2:5][3:0]</code> is passed to <code>input bit [7:0] m[][]</code>. What do <code>svLeft</code>, <code>svRight</code>, <code>svLow</code>, <code>svHigh</code>, <code>svIncrement</code>, <code>svSize</code> return for dimensions 1 and 2, and what are <code>svDimensions</code> and <code>svSizeOfArray</code> in Verilator?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>Dim 1 (<code>[2:5]</code>): left 2, right 5, low 2, high 5, increment <b>−1</b> (left &lt; right), size 4. Dim 2 (<code>[3:0]</code>): left 3, right 0, increment <b>+1</b>, size 4. <code>svDimensions = 2</code> (unpacked dims only). <code>svSizeOfArray = 16</code>: 16 elements × <b>1 byte</b>, because Verilator stores <code>bit [7:0]</code> natively in a byte (0.7). With canonical words it would have been 64. All measured (<code>LOG ex2</code>).</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E3 ★</span><b>Ex. 12.7.</b> For the code of Samples 12.24 and 12.25 (<code>int a[6:1][8:3]</code>), what do <code>svLeft(h,1)</code>, <code>svLeft(h,2)</code>, <code>svRight(h,1)</code>, <code>svRight(h,2)</code>, <code>svSize(h,1)</code>, <code>svSize(h,2)</code>, <code>svDimensions(h)</code>, <code>svSizeOfArray(h)</code> return?</p>
+<details><summary>Show solution</summary><div class="a">
+<p>6, 8, 1, 3, 6, 6, 2, 144. The last one is $36 \times 4$ bytes; Verilator reports it because <code>int</code> is a C type and the array is contiguous (on a simulator that does not use C layout it could legitimately be 0). Measured in <code>openarr.log</code> (<code>LOG query_a</code>).</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E4 ★★</span><b>Find the bug.</b> This works for <code>int a[10]</code> and crashes for <code>int a[10:1]</code>. Why, and what is the minimal fix?</p>
+<pre class="sv"><code><span class="k">int</span> sum_bug(<span class="k">const</span> svOpenArrayHandle h) {
+  <span class="k">int</span> s = 0;
+  <span class="k">for</span> (<span class="k">int</span> i = 0; i &lt; svSize(h, 1); i++) s += *(<span class="k">int</span>*)svGetArrElemPtr1(h, i);
+  <span class="k">return</span> s;
+}</code></pre>
+<details><summary>Show solution</summary><div class="a">
+<p><code>svGetArrElemPtr1</code> takes an <b>SV index</b>. For <code>[10:1]</code>, index 0 does not exist, the function returns <code>NULL</code> and the dereference segfaults. In the lab the process exits with code 139 before the <code>$display</code> (<code>ex/bug_loop</code>). Fix: <code>for (int i = svLow(h,1); i &lt;= svHigh(h,1); i++)</code>. Note that <code>svSize</code> was right; only the starting point was wrong.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E5 ★★</span><b>Write.</b> <code>ex5_hist(input byte data[], output int hist[])</code>: <code>hist</code> has 16 bins and counts the high nibble of each byte, treating bytes as unsigned. Check against an SV computation over 64 bytes <code>data[i] = byte'(i*37)</code>.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="k">void</span> ex5_hist(<span class="k">const</span> svOpenArrayHandle data, <span class="k">const</span> svOpenArrayHandle hist) {
+  <span class="k">for</span> (<span class="k">int</span> b = svLow(hist, 1); b &lt;= svHigh(hist, 1); b++) *(<span class="k">int</span>*)svGetArrElemPtr1(hist, b) = 0;
+  <span class="k">for</span> (<span class="k">int</span> i = svLow(data, 1); i &lt;= svHigh(data, 1); i++) {
+    <span class="k">unsigned</span> <span class="k">char</span> v = *(<span class="k">unsigned</span> <span class="k">char</span>*)svGetArrElemPtr1(data, i);   <span class="c">// byte is SIGNED char</span>
+    (*(<span class="k">int</span>*)svGetArrElemPtr1(hist, v &gt;&gt; 4))++;
+  }
+}</code></pre>
+<p>Result: <code>match=1 bin0=6 bin15=3</code>. <b>Two lessons.</b> (1) <code>hist</code> is <code>output</code>: C must write every element, so it zeroes the bins first (0.2). (2) SV <code>byte</code> is signed; read it as <code>char</code> and <code>v &gt;&gt; 4</code> is negative for half the values, an out-of-range index. Cast to <code>unsigned char</code>. (The bin index <code>v &gt;&gt; 4</code> is used as an SV index directly, which is valid only because <code>hist</code> is declared <code>[16]</code>, i.e. <code>[0:15]</code>; for a general range add <code>svLow(hist,1)</code>.)</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E6 ★★</span><b>Predict.</b> <code>bit [7:0] b8[4] = '{8'h11, 8'h22, 8'h33, 8'h44}</code> is passed to <code>input bit [7:0] b[]</code>, and C returns <code>*(svBitVecVal*)svGetArrElemPtr1(b, 0)</code>. What does SV print with <code>%h</code> on Verilator? What should portable code do?</p>
+<details><summary>Show solution</summary><div class="a">
+<p><code>44332211</code>. Verilator stores each <code>bit [7:0]</code> element in one byte; reading a 32-bit word at element 0 picks up four elements, little-endian. Portable: <code>svBitVecVal w; svGetBitArrElem1VecVal(&amp;w, b, 0);</code> gives <code>0x11</code> on every simulator (or declare the formal as <code>byte b[]</code>, a C type, and read <code>char</code>s). Measured: <code>LOG raw8 elem0=44332211</code>.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E7 ★★</span><b>Write.</b> For <code>eth_hdr_t</code> of 0.8, write <code>ex7_swap_macs(inout eth_hdr_t h)</code> that exchanges <code>dst</code> and <code>src</code> and leaves <code>etype</code> alone. No C struct overlays.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="k">void</span> ex7_swap_macs(svBitVecVal* h) {                <span class="c">// dst = [111:64], src = [63:16]</span>
+  svBitVecVal dl, dh, sl, shi;
+  svGetPartselBit(&amp;dl, h, 64, 32); svGetPartselBit(&amp;dh, h, 96, 16);
+  svGetPartselBit(&amp;sl, h, 16, 32); svGetPartselBit(&amp;shi, h, 48, 16);
+  svPutPartselBit(h, sl, 64, 32);  svPutPartselBit(h, shi, 96, 16);
+  svPutPartselBit(h, dl, 16, 32);  svPutPartselBit(h, dh, 48, 16);
+}</code></pre>
+<p>With <code>dst=aaaaaaaaaaaa src=123456789abc etype=0806</code> the result is <code>dst=123456789abc src=aaaaaaaaaaaa etype=0806</code>. <b>Lesson:</b> part-selects are limited to 32 bits, so a 48-bit field moves in two pieces; the positions come straight from the SV declaration (last member at bit 0).</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E8 ★★</span><b>Find the bug.</b> Why does this sometimes print garbage, and how would you catch it before running?</p>
+<pre class="sv"><code><span class="k">const</span> <span class="k">char</span>* to_hex(<span class="k">int</span> v) {
+  <span class="k">char</span> s[12];
+  snprintf(s, <span class="k">sizeof</span> s, &quot;%08x&quot;, v);
+  <span class="k">return</span> s;
+}</code></pre>
+<details><summary>Show solution</summary><div class="a">
+<p><code>s</code> lives in the function's stack frame, which is released at <code>return</code>; SV copies the string <em>after</em> that, from memory the next call may overwrite. It is undefined behavior: it may even "work" in a small test. clang flags it at compile time and the warning lands in Verilator's build log: <code>address of stack memory associated with local variable 's' returned [-Wreturn-stack-address]</code> (checked). Fix: <code>static char s[12];</code> (Sample 12.30) or a ring of static buffers (Sample 12.31).</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E9 ★★</span><b>Write (Verilator workaround).</b> Your model is <code>int c_sum(input int a[])</code>, but your data is a dynamic array <code>int d[]</code> of arbitrary length, and Verilator rejects it as an actual. Write an SV wrapper <code>sum_dyn(const ref int d[])</code> that feeds the model through a fixed buffer of 256 elements. Test with 1000 elements <code>d[i] = i</code>.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="k">import</span> <span class="k">&quot;DPI-C&quot;</span> <span class="k">function</span> <span class="k">int</span> ex9_sum_n(<span class="k">input</span> <span class="k">int</span> chunk[256], <span class="k">input</span> <span class="k">int</span> n);
+<span class="k">function</span> <span class="k">automatic</span> <span class="k">longint</span> sum_dyn(<span class="k">const</span> <span class="k">ref</span> <span class="k">int</span> d[]);
+  <span class="k">int</span> chunk[256];
+  <span class="k">longint</span> s = 0;
+  <span class="k">for</span> (<span class="k">int</span> base = 0; base &lt; d.size(); base += 256) <span class="k">begin</span>
+    <span class="k">int</span> n = (d.size() - base &lt; 256) ? d.size() - base : 256;
+    <span class="k">for</span> (<span class="k">int</span> k = 0; k &lt; n; k++) chunk[k] = d[base + k];
+    s += ex9_sum_n(chunk, n);
+  <span class="k">end</span>
+  <span class="k">return</span> s;
+<span class="k">endfunction</span></code></pre>
+<p>Result: <code>sum=499500 expect=499500</code>. <b>Lessons:</b> the count must travel separately because a fixed formal carries no size; and do not name the buffer <code>buf</code>: it is a Verilog keyword (gate primitive), a syntax error the lab hit on the first try.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E10 ★★★</span><b>Write.</b> <code>int ex10_matmul(input int a[][], input int b[][], output int c[][])</code> computes <code>c = a × b</code> for arbitrary ranges and returns −1 if the shapes do not match. Test with <code>int ma[1:2][0:2]</code> (<code>i+j</code>), <code>int mb[0:2][5:4]</code> (<code>i−j</code>), <code>int mc[2][2]</code>. Then explain why calling it with a mismatching <code>b</code> and the same <code>mc</code> "erases" the previous result.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="k">int</span> ex10_matmul(<span class="k">const</span> svOpenArrayHandle a, <span class="k">const</span> svOpenArrayHandle b, <span class="k">const</span> svOpenArrayHandle c) {
+  <span class="k">int</span> n = svSize(a, 1), k = svSize(a, 2), m = svSize(b, 2);
+  <span class="k">if</span> (svSize(b, 1) != k || svSize(c, 1) != n || svSize(c, 2) != m) <span class="k">return</span> -1;
+  <span class="k">for</span> (<span class="k">int</span> i = 0; i &lt; n; i++)                       <span class="c">// 0-based OFFSETS, converted below</span>
+    <span class="k">for</span> (<span class="k">int</span> j = 0; j &lt; m; j++) {
+      <span class="k">int</span> s = 0;
+      <span class="k">for</span> (<span class="k">int</span> t = 0; t &lt; k; t++)
+        s += *(<span class="k">int</span>*)svGetArrElemPtr2(a, svLow(a, 1) + i, svLow(a, 2) + t) *
+             *(<span class="k">int</span>*)svGetArrElemPtr2(b, svLow(b, 1) + t, svLow(b, 2) + j);
+      *(<span class="k">int</span>*)svGetArrElemPtr2(c, svLow(c, 1) + i, svLow(c, 2) + j) = s;
+    }
+  <span class="k">return</span> 0;
+}</code></pre>
+<p>Result: <code>c00=-16 c01=-22 c10=-25 c11=-34</code>, <code>bad_rc=-1</code>. With three arrays of different ranges the clean way is to loop over 0-based offsets and add each array's own <code>svLow</code>. Note that "column 0" of <code>b</code> is SV index 4 (its low index), not 5 (its left index).</p>
+<p><b>The erase:</b> <code>c</code> is <code>output</code>. Even when the function returns −1 without touching it, the simulator copies the whole temporary back, and in Verilator that temporary is zero-filled (0.2). The lab passes a separate <code>scratch</code> array to the failing call. Either do that or declare <code>c</code> as <code>inout</code>.</p>
+<p><b>A second lesson the lab taught by accident:</b> the first version declared <code>int rc = ex10_matmul(ma, mb, mc);</code> inside a <code>begin</code> block of an <code>initial</code>. A variable declaration with initializer in a static context is initialized <b>once at time 0</b>, before the <code>foreach</code> loops filled <code>ma</code>/<code>mb</code>, so the model multiplied zeros. Declare first, assign in a statement.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E11 ★★★</span><b>Write.</b> <code>ex11_xor(input bit [127:0] w[], output bit [127:0] x)</code>: XOR-reduce an open array of 128-bit words, portable to any simulator.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="k">void</span> ex11_xor(<span class="k">const</span> svOpenArrayHandle w, svBitVecVal* x) {   <span class="c">// x: 4 canonical words</span>
+  svBitVecVal e[4];
+  memset(x, 0, 4 * <span class="k">sizeof</span>(svBitVecVal));
+  <span class="k">for</span> (<span class="k">int</span> i = svLow(w, 1); i &lt;= svHigh(w, 1); i++) {
+    svGetBitArrElem1VecVal(e, w, i);                <span class="c">// canonical copy, never a raw pointer</span>
+    <span class="k">for</span> (<span class="k">int</span> k = 0; k &lt; 4; k++) x[k] ^= e[k];
+  }
+}</code></pre>
+<p>Matches SV's own XOR (<code>match=1</code>). For a scalar packed <code>output</code> the C side gets a pointer to <code>ceil(128/32) = 4</code> words; write all of them.</p>
+</div></details>
+</div>
+
+<div class="q">
+<p><span class="n">E12 ★★</span><b>Ex. 12.1, on arrays.</b> Spear's Ex. 12.1 shifts one 32-bit value left for <code>n &gt; 0</code>, right for <code>n &lt; 0</code>, not at all for <code>n = 0</code>. Write <code>ex12_shift_all(inout int unsigned v[], input int n)</code> that applies it to every element. What should happen for <code>n = 40</code>?</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="k">void</span> ex12_shift_all(<span class="k">const</span> svOpenArrayHandle v, <span class="k">int</span> n) {
+  <span class="k">for</span> (<span class="k">int</span> i = svLow(v, 1); i &lt;= svHigh(v, 1); i++) {
+    <span class="k">unsigned</span>* p = (<span class="k">unsigned</span>*)svGetArrElemPtr1(v, i);
+    <span class="k">if</span> (n &gt;= 32 || n &lt;= -32) *p = 0;                <span class="c">// C: shifting by &gt;= the width is UB</span>
+    <span class="k">else</span> <span class="k">if</span> (n &gt; 0) *p &lt;&lt;= n;
+    <span class="k">else</span> <span class="k">if</span> (n &lt; 0) *p &gt;&gt;= -n;
+  }
+}</code></pre>
+<p>From <code>{80000001, f, 1, ffffffff}</code>: <code>n=4</code> → <code>00000010,000000f0,00000010,fffffff0</code>; then <code>n=-8</code> → <code>00000000,00000000,00000000,00ffffff</code>; then <code>n=40</code> → 0. <b>Lesson:</b> SV defines <code>x &lt;&lt; 40</code> on 32 bits as 0; C does not define it at all (x86 masks the count to 5 bits, so it would shift by 8). A golden model must reproduce the SV semantics explicitly, and the type must be <code>unsigned</code> so <code>&gt;&gt;</code> is logical.</p>
+</div></details>
+</div>
+
+<h2 id="s3"><span class="no">§3 · Quiz</span>14 questions, self-grading</h2>
+<p class="quiz-score"></p>
+
+<div class="quiz" data-answer="b">
+<p class="qq">1. <code>import "DPI-C" function void f(output bit [31:0] d[20]);</code> What is the C parameter type?</p>
+<label><input type="radio" value="a"> <code>svOpenArrayHandle</code></label>
+<label><input type="radio" value="b"> <code>svBitVecVal*</code></label>
+<label><input type="radio" value="c"> <code>unsigned int[20]</code> passed by value</label>
+<label><input type="radio" value="d"> <code>const svBitVecVal*</code></label>
+<div class="why">A fixed-size array becomes a pointer to its first element, and each <code>bit [31:0]</code> element is one canonical word. Not <code>const</code>, because it is <code>output</code>. A handle appears only for <code>[]</code> formals; C has no array-by-value parameters.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">2. A C function receives <code>output int c[]</code> and writes only <code>c[1]</code>. SV had <code>'{5,5,5}</code> before the call. What does SV hold after, in Verilator?</p>
+<label><input type="radio" value="a"> <code>'{5,7,5}</code></label>
+<label><input type="radio" value="b"> <code>'{5,5,5}</code></label>
+<label><input type="radio" value="c"> <code>'{0,7,0}</code></label>
+<label><input type="radio" value="d"> compile error: output open arrays are illegal</label>
+<div class="why"><code>output</code> means the whole array is the result. Verilator passes a zero-filled temporary and copies all of it back (measured). <code>'{5,7,5}</code> is what <code>inout</code> gives. The LRM leaves the unwritten values undefined, so do not rely on the zeros either.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">3. For <code>int a[6:1]</code>, which loop is correct in C?</p>
+<label><input type="radio" value="a"> <code>for (i = svLow(h,1); i &lt;= svHigh(h,1); i++) svGetArrElemPtr1(h, i)</code></label>
+<label><input type="radio" value="b"> <code>for (i = 0; i &lt; svSize(h,1); i++) svGetArrElemPtr1(h, i)</code></label>
+<label><input type="radio" value="c"> <code>for (i = svLeft(h,1); i &lt;= svRight(h,1); i++) svGetArrElemPtr1(h, i)</code></label>
+<label><input type="radio" value="d"> <code>for (i = svHigh(h,1); i &lt; svLow(h,1); i--) …</code></label>
+<div class="why">Element functions take SV indices, 1..6 here. (b) asks for index 0 (NULL). (c) starts at 6 and tests <code>i &lt;= 1</code>: the body never runs. (d) never runs either.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+<p class="qq">4. What does <code>svIncrement(h,1)</code> return for <code>int a[6:1]</code>?</p>
+<label><input type="radio" value="a"> −1, because walking from 6 to 1 decrements</label>
+<label><input type="radio" value="b"> 6</label>
+<label><input type="radio" value="c"> 0</label>
+<label><input type="radio" value="d"> +1</label>
+<div class="why">The definition is "1 if left ≥ right, else −1". It flags a big-endian range; it is not the loop step (that would be −1, the tempting answer). Measured: +1 for <code>[6:1]</code>, −1 for <code>[0:2]</code>.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">5. Verilator stores <code>int v[10:1]</code> with <code>v[i] = i</code>. What is at offset 0 of <code>svGetArrayPtr(h)</code>?</p>
+<label><input type="radio" value="a"> 10, the left index comes first</label>
+<label><input type="radio" value="b"> 1, the low index comes first</label>
+<label><input type="radio" value="c"> undefined: <code>svGetArrayPtr</code> always returns NULL in Verilator</label>
+<label><input type="radio" value="d"> the descriptor header</label>
+<div class="why">Measured <code>v0=1</code>: low index first, regardless of declared direction. The LRM does not fix this order, which is exactly why <code>svGetArrElemPtr1(h, i)</code> is the portable way. <code>svGetArrayPtr</code> is non-NULL for C-layout arrays like <code>int</code>.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">6. Which actual can you pass to <code>input int a[]</code> in Verilator 5.052?</p>
+<label><input type="radio" value="a"> <code>int d[]</code> (dynamic)</label>
+<label><input type="radio" value="b"> <code>int q[$]</code> (queue)</label>
+<label><input type="radio" value="c"> <code>int f[4]</code> (fixed)</label>
+<label><input type="radio" value="d"> <code>f[1:2]</code> (slice of a fixed array)</label>
+<div class="why">Only fixed-size actuals. Dynamic arrays and queues give <code>%Error-UNSUPPORTED</code>; a slice gives an internal error. The LRM allows dynamic arrays and queues; commercial simulators accept them.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">7. For <code>input bit [7:0] b[]</code>, the C code does <code>*(svBitVecVal*)svGetArrElemPtr1(b, 0)</code>. Why is it wrong in Verilator?</p>
+<label><input type="radio" value="a"> <code>svGetArrElemPtr1</code> is not implemented for packed elements</label>
+<label><input type="radio" value="b"> the element is stored in 1 byte, so a 4-byte read takes 4 elements</label>
+<label><input type="radio" value="c"> <code>svBitVecVal</code> is signed, so 0x80 becomes negative</label>
+<label><input type="radio" value="d"> it is right: canonical form is guaranteed in memory</label>
+<div class="why">Native storage of packed elements is implementation-specific; Verilator uses 1 byte for 8 bits (measured <code>44332211</code>). The canonical form is guaranteed only for the copies made by <code>svGet/PutBitArrElem*VecVal</code>.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">8. <code>typedef struct packed { bit [7:0] r, g, b; } RGB_T;</code> crosses as <code>svBitVecVal* v</code>. Which bits hold <code>r</code>?</p>
+<label><input type="radio" value="a"> bits [23:16] of <code>v[0]</code></label>
+<label><input type="radio" value="b"> bits [7:0] of <code>v[0]</code></label>
+<label><input type="radio" value="c"> byte <code>((char*)v)[0]</code> on any host</label>
+<label><input type="radio" value="d"> <code>v[2]</code></label>
+<div class="why">First member declared = most significant. <code>r</code> is [23:16]. On little-endian x86 that is byte 2 in memory (why the book's C struct lists <code>b, g, r</code>); on big-endian it would be byte 1. Bit positions are host-independent; byte positions are not.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">9. Which way of passing <code>struct { int a; byte b; shortint c; }</code> (unpacked) works in Verilator 5.052?</p>
+<label><input type="radio" value="a"> <code>input ups_t s</code> → <code>const ups_t*</code> in C</label>
+<label><input type="radio" value="b"> <code>input ups_t s</code> → <code>svOpenArrayHandle</code></label>
+<label><input type="radio" value="c"> neither: make it packed or pass the members separately</label>
+<label><input type="radio" value="d"> <code>chandle</code></label>
+<div class="why">The LRM allows unpacked structs of DPI-compatible members (mapped to a C struct), but Verilator says <code>Unsupported: DPI argument of type REFDTYPE 'ups_t'</code>. A <code>chandle</code> is a C pointer SV cannot dereference; it does not carry SV data.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">10. An imported function receives <code>input string s</code> and stores the <code>const char*</code> in a C global to use in the next call. What is wrong?</p>
+<label><input type="radio" value="a"> nothing, SV strings are immutable</label>
+<label><input type="radio" value="b"> the pointer is only valid during the call; copy the text (<code>strdup</code>)</label>
+<label><input type="radio" value="c"> C must <code>free</code> it at the end of the call</label>
+<label><input type="radio" value="d"> input strings arrive as <code>char**</code>, the code does not compile</label>
+<div class="why">SV owns input strings and may reallocate them as soon as control returns (the next assignment to the variable). C copies if it needs the text later and never frees SV's pointer.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+<p class="qq">11. Which return statement is safe for <code>import "DPI-C" function string f();</code>?</p>
+<label><input type="radio" value="a"> <code>char s[16]; …; return s;</code></label>
+<label><input type="radio" value="b"> <code>std::string s; …; return s.c_str();</code></label>
+<label><input type="radio" value="c"> <code>char* s = malloc(16); …; return s;</code> and SV frees it</label>
+<label><input type="radio" value="d"> <code>static char s[16]; …; return s;</code></label>
+<div class="why">(a) and (b) point into objects destroyed at return. (c) returns live memory, but SV never frees a returned string: it leaks one buffer per call. A static (or a ring of static buffers, Sample 12.31) is alive when SV copies.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+<p class="qq">12. <code>import "DPI-C" function void upcase(inout string s);</code> How does C change the string?</p>
+<label><input type="radio" value="a"> it writes a new pointer into <code>*s</code> (to static/heap text); SV copies it</label>
+<label><input type="radio" value="b"> it writes into the characters of <code>*s</code> in place</label>
+<label><input type="radio" value="c"> it calls <code>free(*s)</code> and <code>malloc</code>s a new buffer</label>
+<label><input type="radio" value="d"> it cannot: inout strings are read-only</label>
+<div class="why">The C type is <code>const char**</code>: the text is const. C points <code>*s</code> at its own storage and SV copies from there after return. Writing in place or freeing SV's buffer corrupts the simulator's heap.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+<p class="qq">13. A C model writes <code>data[i].aval</code> but leaves <code>bval</code> uninitialized for a <code>logic [31:0] data[20]</code> output. What do you see?</p>
+<label><input type="radio" value="a"> X/Z on every simulator</label>
+<label><input type="radio" value="b"> correct values on every simulator</label>
+<label><input type="radio" value="c"> correct values on Verilator (2-state, ignores <code>bval</code>), possibly X/Z on a 4-state simulator</label>
+<label><input type="radio" value="d"> a compile error</label>
+<div class="why">Measured: with <code>bval = 0xFFFFFFFF</code> Verilator still shows the <code>aval</code> value and <code>$isunknown</code> = 0. A 4-state simulator decodes the garbage <code>bval</code> as X/Z. Bugs that hide on Verilator are the worst kind; write <code>bval</code>, or use <code>bit</code>.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+<p class="qq">14. Which formal accepts <code>bit [1:0][0:3][6:-1] bpack[9:1]</code>?</p>
+<label><input type="radio" value="a"> <code>input bit [1:0][0:3][6:-1] b[]</code> only (packed dims must match exactly)</label>
+<label><input type="radio" value="b"> <code>input bit [63:0] b64[]</code></label>
+<label><input type="radio" value="c"> <code>input bit [7:0] b[][][]</code></label>
+<label><input type="radio" value="d"> <code>input longint b[9]</code></label>
+<div class="why">An open array has one packed dimension; the actual's packed dims just have to flatten to the same width (2·4·8 = 64). (c) turns packed dims into unpacked ones, a different type. (d) needs an element type equivalent to the actual's: <code>longint</code> is signed, the packed actual is unsigned, so the types differ.</div>
+</div>
+
+<h2 id="s4"><span class="no">§4 · Lab</span>Everything above, measured</h2>
+<p>Directory <code>04_arrays_structs_strings/lab/</code>. One self-checking testbench per topic, top module <code>top</code>, Verilator 5.052 (<code>--binary --timing</code>, flags in <code>../../common/lab.sh</code>).</p>
+<pre class="sv"><code>cd tutorial/04_arrays_structs_strings/lab
+python3 check.py          # builds everything in parallel, runs, asserts (69 checks)
+python3 check.py --no-run # re-check the logs in build/ only</code></pre>
+<p><b>Predict before you run:</b> (1) the eleven query values for <code>int up[0:2][0:3]</code>; (2) whether <code>static_two</code> prints two different strings; (3) the bytes per element for <code>bit [12:0]</code>; (4) which of the four <code>kinds</code> builds fail.</p>
+<div class="tbl"><table>
+<tr><th>Experiment</th><th>Files</th><th>What to look at</th><th>Result (Verilator 5.052)</th></tr>
+<tr><td>Fixed arrays</td><td class="mono">fib.sv/.c</td><td><code>build/vl_fib/Vtop__Dpi.h</code>, <code>bval</code> ignored</td><td><code>d19=6765</code>; <code>fib4_bad unknown=0</code></td></tr>
+<tr><td>Open arrays</td><td class="mono">openarr.sv/.c</td><td>query table, flat order, NULL on bad index or dims</td><td><code>bytes=144</code>; <code>v0=1</code>; 2 run-time warnings</td></tr>
+<tr><td>Actual kinds</td><td class="mono">kinds.sv/.c</td><td><code>build/k_*.build</code></td><td>fixed OK; dyn, queue, slice fail</td></tr>
+<tr><td>Packed elements</td><td class="mono">packed.sv/.c</td><td>layout, raw pointer vs VecVal</td><td>1/2/8/16 bytes; <code>raw8=44332211</code></td></tr>
+<tr><td>Structs</td><td class="mono">structs.sv/.c</td><td>overlay vs part-select; <code>s_ups.build</code></td><td>both invert; unpacked UNSUPPORTED</td></tr>
+<tr><td>Strings</td><td class="mono">strings.sv/.c</td><td>prototypes, static vs ring, strdup</td><td>all pass; returned string copied at once</td></tr>
+<tr><td>Directions</td><td class="mono">outdir.sv/.c</td><td>unwritten elements</td><td><code>out=0,7,0 io=5,7,5</code></td></tr>
+<tr><td>Exercises</td><td class="mono">ex/*</td><td><code>ex.log</code>, <code>bug_loop.log</code>, <code>bug_str.build</code></td><td>E1–E12 as quoted; bug_loop rc 139</td></tr>
+</table></div>
+<p>Things worth opening by hand: <code>build/vl_strings/Vtop__Dpi.h</code> (the string prototypes), <code>build/k_dyn.build</code> (the unsupported message), and <code>build/bug_str.build</code> (clang's warning, buried in the make output).</p>
+
+<h2 id="s5"><span class="no">§5 · Cheat sheet</span>One table, ten rules</h2>
+<div class="tbl"><table>
+<tr><th>SV formal</th><th>C parameter</th><th>Access</th><th>Pitfall</th></tr>
+<tr><td class="mono">input int v[8]</td><td class="mono">const int*</td><td><code>v[k]</code>, k = 0..7</td><td>size is a contract, not checked</td></tr>
+<tr><td class="mono">output bit [31:0] d[20]</td><td class="mono">svBitVecVal*</td><td><code>d[k]</code></td><td>write every element</td></tr>
+<tr><td class="mono">output logic [31:0] d[20]</td><td class="mono">svLogicVecVal*</td><td><code>d[k].aval/.bval</code></td><td>forgetting <code>bval</code> hides on Verilator</td></tr>
+<tr><td class="mono">input byte b[4]</td><td class="mono">const char*</td><td><code>b[k]</code></td><td>signed: cast to <code>unsigned char</code></td></tr>
+<tr><td class="mono">inout int a[][]</td><td class="mono">svOpenArrayHandle</td><td><code>svGetArrElemPtr2(h,i,j)</code>, SV indices</td><td>0-based loop → NULL</td></tr>
+<tr><td class="mono">input bit [N-1:0] w[]</td><td class="mono">svOpenArrayHandle</td><td><code>svGetBitArrElem1VecVal(e,h,i)</code></td><td>raw pointer wrong if N ≤ 32 (Verilator)</td></tr>
+<tr><td class="mono">inout struct packed …</td><td class="mono">svBitVecVal*</td><td><code>svGet/PutPartselBit</code>, shifts</td><td>C struct overlay: endian, word straddle</td></tr>
+<tr><td class="mono">input string s</td><td class="mono">const char*</td><td>read during call</td><td>copy to keep</td></tr>
+<tr><td class="mono">function string f</td><td class="mono">const char* f(…)</td><td>return static/heap</td><td>never a local array</td></tr>
+<tr><td class="mono">output string s</td><td class="mono">const char**</td><td><code>*s = ptr</code></td><td>SV copies, never frees</td></tr>
+<tr><td class="mono">inout string s</td><td class="mono">const char**</td><td>read <code>*s</code>, assign new ptr</td><td>no in-place writes</td></tr>
+</table></div>
+<ol>
+<li>SV owns all argument storage; C borrows it until return.</li>
+<li>Read the prototype from <code>V&lt;top&gt;__Dpi.h</code>, and <code>#include</code> it.</li>
+<li><code>output</code> = C writes everything; otherwise <code>inout</code>.</li>
+<li>Open-array loops run <code>svLow</code>…<code>&lt;= svHigh</code> on SV indices.</li>
+<li><code>svIncrement</code> is not a loop step.</li>
+<li>Memory order of unpacked arrays is the simulator's business: use <code>svGetArrElemPtr*</code> unless you checked <code>svGetArrayPtr</code>.</li>
+<li>Packed elements: canonical copies (<code>…VecVal</code>), not raw pointers.</li>
+<li>Packed structs: bit positions, first member = MSBs.</li>
+<li>Verilator: no dynamic arrays, queues, slices or unpacked structs as DPI arguments; no 4-state.</li>
+<li>Strings: copy what comes in, return what stays alive.</li>
+</ol>
+
+</main>
+</div>
+</body>
+</html>

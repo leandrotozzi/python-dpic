@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DPI-C 05: Export and Context</title>
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../assets/guide.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/contrib/auto-render.min.js"></script>
+<script defer src="../assets/quiz.js"></script>
+<script>
+try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
+document.addEventListener('DOMContentLoaded',function(){
+  renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
+  var toc=document.getElementById('toc');
+  if(matchMedia('(min-width:1100px)').matches)toc.open=true;
+  var links=[].slice.call(toc.querySelectorAll('a[href^="#"]')),map={};
+  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;links.forEach(function(a){a.classList.remove('on')});map[e.target.id].classList.add('on')})},{rootMargin:'0px 0px -75% 0px'});
+  Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el)});
+});
+function setAll(o){document.querySelectorAll('main details').forEach(function(d){d.open=o})}
+function theme(){var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'),n=d==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}}
+</script>
+<style>
+pre.sv,pre.c{font-size:13px;line-height:1.5}
+pre .c{color:var(--muted);font-style:italic}
+pre .k{color:var(--acc);font-weight:600}
+p code,li code,td code{overflow-wrap:anywhere}
+td.mono,th.mono{font-family:var(--font-mono);white-space:nowrap;font-size:13px}
+.nav2{display:flex;justify-content:space-between;gap:12px;font-family:var(--font-mono);font-size:12.5px;margin-top:6px}
+</style>
+</head>
+<body>
+<svg class="dg-defs" aria-hidden="true" focusable="false"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-acc" d="M0,1 L10,5 L0,9 z"/></marker>
+  <marker id="ah-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah-2" d="M0,1 L10,5 L0,9 z"/></marker>
+</defs></svg>
+
+<div class="page">
+<details class="toc" id="toc"><summary>Contents</summary><nav><ol>
+<li class="grp">0 · Tutorial</li>
+<li><a href="#tut">The step in one idea</a></li>
+<li><a href="#t-dir">0.1 Two directions</a></li>
+<li><a href="#t-export">0.2 Your first export</a></li>
+<li><a href="#t-flavors">0.3 pure, generic, context</a></li>
+<li><a href="#t-pure">0.4 What pure buys in practice</a></li>
+<li><a href="#t-cost">0.5 What context costs</a></li>
+<li><a href="#t-missing">0.6 Forgetting context</a></li>
+<li><a href="#t-scope">0.7 The scope API</a></li>
+<li><a href="#t-user">0.8 Per-scope user data</a></li>
+<li><a href="#t-tasks">0.9 Tasks across the boundary</a></li>
+<li><a href="#t-time">0.10 Exported tasks that wait</a></li>
+<li><a href="#t-mem">0.11 The command-file memory</a></li>
+<li><a href="#t-objs">0.12 Objects behind an index</a></li>
+<li><a href="#t-pull">0.13 The pull model</a></li>
+<li><a href="#t-errata">0.14 Book errata and dated parts</a></li>
+<li><a href="#t-rules">0.15 Rules of thumb</a></li>
+<li class="grp">Practice</li>
+<li><a href="#s1">1 · Objectives</a></li>
+<li><a href="#s2">2 · Exercises</a></li>
+<li><a href="#s3">3 · Quiz</a></li>
+<li><a href="#s4">4 · Lab</a></li>
+<li><a href="#s5">5 · Cheat sheet</a></li>
+</ol></nav></details>
+
+<main>
+<div class="top"><a href="../index.html">← Tutorial index</a><button onclick="theme()" aria-label="Toggle light/dark theme">◐ theme</button></div>
+<div class="nav2"><a href="../04_arrays_structs_strings/guide.html">← 04 Arrays, structs, strings</a><a href="../06_golden_model_c/guide.html">06 Golden model in C →</a></div>
+<p class="kicker">DPI-C tutorial · Part A · Step 05 · Spear &amp; Tumbush §12.7–12.8</p>
+<h1>Export and context: when C calls back into SystemVerilog</h1>
+<p class="deck">Up to now C was a leaf: SV called it, it computed, it returned. This step makes the call go both ways. C calls SV functions and tasks through <code>export "DPI-C"</code>, and it needs to know <em>which</em> SV instance it is talking to. That is what <code>context</code> and the scope API are for. Verilator implements most of this faithfully. One big piece it rejects outright, and one small piece it gets silently wrong.</p>
+<p class="meta"><span>Prereqs: <a href="../01_first_call/guide.html">01</a> (import, the generated <code>Vtop__Dpi.h</code>), <a href="../03_state_and_handles/guide.html">03</a> (chandle, per-instance state)</span><span>Book pages: PDF = book + 36 in ch. 12</span><span>Every number below comes from <code>lab/check.py</code></span></p>
+<div class="tools"><button onclick="setAll(true)">Open all</button><button onclick="setAll(false)">Close all</button></div>
+
+<h2 id="tut"><span class="no">§0 · Tutorial</span>The step in one idea</h2>
+<p class="lead">An imported C routine runs <em>somewhere</em> in the SV hierarchy: in the scope where its <code>import</code> declaration sits. As long as C only computes, that place doesn't matter. As soon as C wants to call back into SV (an exported function, a task, VPI), the simulator must know which module instance C stands in, because every instance has its own copy of the exported routine. <code>context</code> is the promise that makes the simulator record that place on every call. The scope API (<code>svGetScope</code>, <code>svSetScope</code>, …) lets C read and change it.</p>
+<p>The step follows the book's §12.7–12.8 in order: export syntax, the three import flavors (pure, generic, context), the scope API, exported tasks, and the command-file memory model the book grows across Samples 12.37–12.45. Every sample was rebuilt in the <a href="#s4">lab</a> on Verilator 5.052. Three results are worth knowing before you start:</p>
+<ul>
+<li>Verilator <b>refuses timing controls inside exported tasks</b> (<code>#</code>, <code>@</code>, even nested in a called task). The book's timed memory model (Sample 12.40) does not compile. The portable alternative is the <a href="#t-pull">pull model</a>: SV owns time, C is an iterator.</li>
+<li>A non-<code>context</code> import that calls an export fails fatally when no scope was ever set. When an <em>earlier</em> context call left a scope behind, it silently runs the <b>wrong instance's</b> export (<a href="#t-missing">0.6</a>).</li>
+<li><code>pure</code> did not save a single call in Verilator, and a DPI function in combinational logic ran 11 times for 5 input changes. Call counts are the simulator's business, never yours (<a href="#t-pure">0.4</a>).</li>
+</ul>
+
+<!-- 0.1 -->
+<h3 id="t-dir"><span class="no">0.1</span>Two directions across one boundary</h3>
+<p>Steps 01–04 used one direction: <code>import "DPI-C"</code> makes a C symbol callable from SV. <code>export "DPI-C"</code> is the mirror. It makes an SV function or task callable from C, under a C symbol the simulator generates. The two combine into a round trip. SV calls an imported C routine, which calls an exported SV routine, which may call another import, and so on. Each crossing is a plain C call on the same machine stack. No threads, no messages, no copies of the simulator state.</p>
+<figure class="fig wide">
+<svg class="dg" viewBox="0 0 720 300" role="img" aria-label="Call stack of a round trip: SV initial block calls imported C function c_display, which calls exported SV function sv_display; frames stack downward, the scope register records which instance made the call.">
+<text class="ttl" x="20" y="24">ONE THREAD, ONE STACK</text>
+<rect class="box soft" x="110" y="40" width="300" height="56" rx="8"/><text class="lbl" x="260" y="60">SV: initial in top.b1</text><text class="note mid" x="260" y="82">c_display();</text>
+<rect class="box hot" x="150" y="122" width="300" height="56" rx="8"/><text class="lbl" x="300" y="142">C: c_display()</text><text class="note mid" x="300" y="164">import "DPI-C" context function</text>
+<rect class="box soft" x="190" y="204" width="300" height="56" rx="8"/><text class="lbl" x="340" y="224">SV: top.b1.sv_display()</text><text class="note mid" x="340" y="246">export "DPI-C" function</text>
+<path class="e hot" d="M240,96 V122" marker-end="url(#ah-acc)"/><text class="t" x="248" y="114">import call</text>
+<path class="e hot" d="M280,178 V204" marker-end="url(#ah-acc)"/><text class="t" x="288" y="196">export call</text>
+<path class="e dash" d="M190,240 C40,240 40,68 110,68" marker-end="url(#ah)"/><text class="t" x="70" y="146">returns</text><text class="t" x="70" y="162">unwind</text>
+<rect class="reg hot" x="580" y="122" width="130" height="56" rx="6"/><text class="lbl" x="645" y="142">scope register</text><text class="note mid" x="645" y="164">= top.b1</text>
+<path class="e dash" d="M450,150 H580" marker-end="url(#ah)"/><text class="t" x="462" y="142">context:</text><text class="t" x="462" y="168">set on entry</text>
+<text class="note" x="20" y="290">The export that runs is the copy in the scope register's instance, not "the" sv_display.</text>
+</svg>
+<figcaption><b>Fig. 0.1</b>A round trip is nested ordinary calls. The scope register is a simulator-side "current instance" pointer. A <code>context</code> import sets it on entry, and an export call reads it to pick the instance.</figcaption>
+</figure>
+
+<!-- 0.2 -->
+<h3 id="t-export"><span class="no">0.2</span>Your first export (Samples 12.34, 12.35, 12.46)</h3>
+<p>The export declaration is deliberately bare: <code>export "DPI-C" function name;</code>. There is no return type, no argument list, and not even <code>()</code>. The LRM forbids repeating the signature because it already lives in the SV function declaration, and two copies could drift apart. An optional C name renames it (<code>export "DPI-C" c_name = function sv_name;</code>), exactly like imports in <a href="../01_first_call/guide.html">step 01</a>. The C side calls the symbol like any C function. Don't hand-write its prototype: include the generated <code>Vtop__Dpi.h</code>, which lists exports as well as imports.</p>
+<pre class="sv"><code><span class="c">// lab/scopes.sv: one C routine, two SV scopes (Samples 12.34 + 12.46)</span>
+<span class="k">module</span> block;
+  <span class="k">import</span> "DPI-C" <span class="k">context function void</span> c_display();
+  <span class="k">export</span> "DPI-C" <span class="k">function</span> sv_display;          <span class="c">// no return type, no args, no ()</span>
+  <span class="k">function void</span> sv_display();
+    $display("LOG sv where=%m");
+  <span class="k">endfunction</span>
+  <span class="k">initial</span> c_display();
+<span class="k">endmodule</span>
+
+<span class="k">module</span> top;
+  <span class="k">import</span> "DPI-C" <span class="k">context function void</span> c_display();
+  <span class="k">export</span> "DPI-C" <span class="k">function</span> sv_display;          <span class="c">// a second, independent export</span>
+  <span class="k">function void</span> sv_display(); $display("LOG sv where=%m"); <span class="k">endfunction</span>
+  block b1();
+  <span class="k">initial</span> #1 c_display();
+<span class="k">endmodule</span></code></pre>
+<pre class="c"><code><span class="c">// lab/scopes.c: printf replaces the book's io_printf (a PLI routine Verilator doesn't have)</span>
+#include &lt;stdio.h&gt;
+#include "svdpi.h"
+#include "Vtop__Dpi.h"     <span class="c">// generated: prototypes for imports AND exports</span>
+
+void c_display(void) {
+  const char* file = "?"; int line = 0;
+  svGetCallerInfo(&amp;file, &amp;line);                    <span class="c">// SV file:line of the import call</span>
+  printf("LOG c scope=%s caller=%s:%d\n", svGetNameFromScope(svGetScope()), file, line);
+  fflush(stdout);
+  sv_display();            <span class="c">// which one? the export of the CURRENT scope</span>
+}</code></pre>
+<pre><code>LOG c scope=top.b1 caller=scopes.sv:9
+LOG sv where=top.b1.sv_display
+LOG c scope=top caller=scopes.sv:19
+LOG sv where=top.sv_display</code></pre>
+<p>One C symbol <code>sv_display</code> stands for <em>two</em> SV functions, <code>top.sv_display</code> and <code>top.b1.sv_display</code>. The simulator dispatches on the scope that the <code>context</code> import recorded. That is the book's §12.8.5 "meaning of context" in four log lines. The generated header shows the C view:</p>
+<pre class="c"><code><span class="c">// build/vl_scopes/Vtop__Dpi.h (excerpt)</span>
+    <span class="c">// DPI EXPORTS</span>
+    extern void sv_display();
+    <span class="c">// DPI IMPORTS</span>
+    extern void c_display();</code></pre>
+<p>What can be exported: functions and tasks declared in a module, interface, program, package or <code>$unit</code>. Class methods cannot be exported (§12.8.4), because no object exists at elaboration time when the C symbol is bound. <a href="#t-objs">0.12</a> shows the workaround. In one scope, one export per C name. The same name exported from several scopes is legal: that is exactly the two-instance case above.</p>
+<div class="callout note" style="--c-label:'In Verilator'"><p>Verilator compiles <code>.c</code> files as C++ (clang warns "treating 'c' input as 'c++'"). The generated header wraps prototypes in <code>extern "C"</code>, so including it is also what keeps C++ name mangling from breaking the link (<a href="../01_first_call/guide.html">step 01</a>). <code>svGetCallerInfo</code> works and returns the path as given on the command line (<code>ex/report.sv:12</code> in one exercise, <code>scopes.sv:9</code> here).</p></div>
+
+<!-- 0.3 -->
+<h3 id="t-flavors"><span class="no">0.3</span>Three flavors of import: pure, generic, context</h3>
+<p>Every import makes a promise to the SV compiler about what the C code touches. The promise decides what the optimizer may assume and what bookkeeping the simulator must do on each call (IEEE 1800-2023 §35.5.2–35.5.3; book §12.7):</p>
+<div class="tbl"><table>
+<thead><tr><th>Flavor</th><th>Declaration</th><th>C may…</th><th>C must not…</th><th>Simulator may…</th></tr></thead>
+<tbody>
+<tr><td><b>pure</b></td><td class="mono">import "DPI-C" pure function</td><td>compute from its inputs only</td><td>touch globals/statics, do I/O, call exports or VPI, have output/inout args; can't be a task</td><td>drop a call whose result is unused, reuse a previous result for equal inputs, reorder</td></tr>
+<tr><td><b>generic</b> (default)</td><td class="mono">import "DPI-C" function</td><td>keep C state, do file I/O, allocate</td><td>call exports, use VPI/PLI, read SV objects other than its args</td><td>nothing special; call it exactly as written</td></tr>
+<tr><td><b>context</b></td><td class="mono">import "DPI-C" context function / task</td><td>all of generic + call exports, VPI, <code>svGetScope</code>/<code>svSetScope</code></td><td>(nothing extra)</td><td>must record the calling scope on every call; must assume SV state changed after the call</td></tr>
+</tbody></table></div>
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 230" role="img" aria-label="Nested capability boxes: pure inside generic inside context. Pure computes from inputs; generic adds C state and I/O; context adds calling SV exports, VPI and the scope API.">
+<rect class="box soft" x="20" y="20" width="680" height="190" rx="12"/><text class="ttl" x="36" y="42">CONTEXT  ·  + call exports, VPI, svGetScope/svSetScope, read SV state</text>
+<rect class="box" x="50" y="60" width="500" height="130" rx="10"/><text class="ttl" x="66" y="82">GENERIC (default)  ·  + static/global C state, files, malloc</text>
+<rect class="box hot" x="80" y="100" width="260" height="70" rx="8"/><text class="lbl" x="210" y="124">PURE</text><text class="note mid" x="210" y="148">result = f(inputs) only</text>
+<text class="note" x="360" y="124">cost per call:</text><text class="note" x="360" y="144">pure ≈ generic ≈ 1.3–1.8 ns</text>
+<text class="note" x="570" y="100">context ≈ 10 ns</text><text class="note" x="570" y="120">(measured, 0.5)</text>
+</svg>
+<figcaption><b>Fig. 0.2</b>The flavors nest: each one may do everything the inner one may, plus more. Declare the <em>innermost</em> flavor that is true. Lying outward (calling an export from a generic import) is the bug, not the overhead.</figcaption>
+</figure>
+<p>The book's term "generic" comes from Sutherland (2004). The LRM has no name for the default flavor. Two consequences matter for golden models. First, a reference model that keeps state between calls (a CRC register, a FIR delay line, a scoreboard queue) is <b>not</b> pure, even if each call looks like a function of its inputs. Second, the only things that <em>require</em> <code>context</code> are calling back into SV and asking about scopes. A C model that just computes and logs with <code>printf</code> is generic.</p>
+
+<!-- 0.4 -->
+<h3 id="t-pure"><span class="no">0.4</span>What <code>pure</code> buys in practice (measured)</h3>
+<p>The LRM <em>allows</em> the compiler to elide or merge pure calls. To see whether Verilator does, the lab declares the same C function twice, once <code>pure</code> and once generic. Each one secretly counts its calls, a side effect a real pure function must not have, so the counter is a probe. The SV code discards one result, computes <code>f(a) + f(a)</code>, and calls <code>f(a)</code> in a loop with a loop-invariant argument:</p>
+<pre class="sv"><code><span class="c">// lab/pure.sv (core)</span>
+void'(sq_pure(a));                               <span class="c">// result discarded: may be dropped?</span>
+r = sq_pure(a) + sq_pure(a);                     <span class="c">// common subexpression: may be merged?</span>
+<span class="k">for</span> (<span class="k">int</span> i = 0; i &lt; 4; i++) r += sq_pure(a);   <span class="c">// loop-invariant: may be hoisted?</span>
+<span class="c">// same three lines with sq_gen (no pure)</span></code></pre>
+<pre><code>LOG pure calls=7 r=294
+LOG gen calls=7 b=294</code></pre>
+<p>Seven SV calls, seven C calls, with or without <code>pure</code>, and also with <code>-O3</code>. Verilator does not use the license in procedural code. Combinational logic is a different story. With <code>assign yp = sq_pure(x)</code> and <code>x</code> changing 5 times, C ran <b>11 times</b> for both flavors. Verilator evaluates combinational logic as often as its scheduling needs (initial settle, re-evaluation in the same time step), and the count is an implementation detail.</p>
+<p class="hv">The number of times C runs is not part of the SV semantics, for either flavor. Procedural code: it is whatever the LRM allows (pure: possibly fewer). Continuous assignments and <code>always_comb</code>: whatever the simulator's scheduler does (11 for 5 here). A stateful C model, such as a CRC register or a counter, must be called from procedural code at well-defined events (a clock edge, a transaction), never from an <code>assign</code>.</p>
+<div class="callout trap"><p>Declaring something <code>pure</code> that isn't, for example a function that also logs to a file or bumps a counter, is harmless on Verilator 5.052 today and a heisenbug on a simulator that does use the license, or on the next Verilator. If you are not sure, leave it generic. Measured cost difference: none (0.5).</p></div>
+
+<!-- 0.5 -->
+<h3 id="t-cost"><span class="no">0.5</span>What <code>context</code> costs (measured)</h3>
+<p>The book warns that context has "overhead" because the simulator must record the calling scope. The lab measures it with 5 M calls of a trivial C function (<code>x ^ 0x5a</code>), timed in C with <code>clock_gettime</code>, on the Verilator build of the lab (macOS x86_64, Verilator 5.052). The absolute values swing with machine load: a run with other builds in parallel gave 2.3 / 2.2 / 22.6 / 108 ns. The ordering and the context-vs-generic ratio held in every run, and those are what <code>check.py</code> asserts.</p>
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 220" role="img" aria-label="Bar chart of nanoseconds per DPI call: generic about 1.3, pure about 1.5, context about 9.7, context plus one export call about 18.5.">
+<text class="ttl" x="20" y="24">NS PER CALL (5 M CALLS, ONE RUN OF check.py)</text>
+<line class="grid" x1="200" y1="40" x2="200" y2="190"/>
+<rect class="box soft" x="200" y="44" width="23" height="26"/><text class="t end" x="190" y="61">generic</text><text class="t" x="232" y="61">1.3</text>
+<rect class="box soft" x="200" y="80" width="27" height="26"/><text class="t end" x="190" y="97">pure</text><text class="t" x="236" y="97">1.5</text>
+<rect class="box hot" x="200" y="116" width="170" height="26"/><text class="t end" x="190" y="133">context</text><text class="t" x="380" y="133">9.7</text>
+<rect class="box hot" x="200" y="152" width="325" height="26"/><text class="t end" x="190" y="169">context + export</text><text class="t" x="535" y="169">18.5</text>
+<text class="note" x="200" y="210">scale: 17.5 px/ns · ratios are what check.py asserts (context &gt; 2.5× generic)</text>
+</svg>
+<figcaption><b>Fig. 0.3</b>A context call costs about 6–10× a generic call on Verilator (runs: 10.9/1.8, 9.7/1.3, 22.6/2.3). An export call from C adds about the same again, because Verilator re-establishes the scope on the way back into SV. In absolute terms both are tiny: 10 ns per call is 100 M calls/s.</figcaption>
+</figure>
+<p>For a golden model called once per transaction, none of this matters: a DUT cycle in Verilator costs far more than 10 ns. It starts to matter when a model is called per bit or per sample in a tight loop. That is the "batching" topic of <a href="../06_golden_model_c/guide.html">step 06</a> and <a href="../08_python_golden_model/guide.html">step 08</a>, where a call into Python costs far more than any of these (measured there).</p>
+
+<!-- 0.6 -->
+<h3 id="t-missing"><span class="no">0.6</span>Forgetting <code>context</code>: one loud failure, one silent one</h3>
+<p>The book says that if a generic import calls an export, "the simulator could crash" (§12.7). On Verilator the outcome depends on what ran <em>before</em>, and the dangerous case doesn't crash. <code>lab/noctx.sv</code> has a non-context import <code>call_export()</code> in <code>top</code> that calls the export <code>sv_hello</code>. Two runs:</p>
+<pre class="sv"><code><span class="c">// lab/noctx.sv (core)</span>
+<span class="k">module</span> other;                                     <span class="c">// has its own sv_hello export</span>
+  <span class="k">import</span> "DPI-C" <span class="k">context function void</span> touch();   <span class="c">// empty C function</span>
+  <span class="k">export</span> "DPI-C" <span class="k">function</span> sv_hello;
+  <span class="k">function void</span> sv_hello(); $display("LOG sv hello where=%m"); <span class="k">endfunction</span>
+`ifdef STALE <span class="k">initial</span> touch(); `endif                <span class="c">// a context call BEFORE ours</span>
+<span class="k">endmodule</span>
+<span class="k">module</span> top;
+  <span class="k">import</span> "DPI-C" <span class="k">function void</span> call_export();      <span class="c">// BUG: should be context</span>
+  <span class="k">export</span> "DPI-C" <span class="k">function</span> sv_hello;
+  <span class="k">function void</span> sv_hello(); $display("LOG sv hello where=%m"); <span class="k">endfunction</span>
+  other o();
+  <span class="k">initial</span> #1 call_export();
+<span class="k">endmodule</span></code></pre>
+<pre><code><span class="c">// run 1: no context call ever happened</span>
+%Warning: DPI C Function called by Verilog DPI import with missing 'context' keyword.
+LOG c scope=NULL
+%Error: unknown:0: Testbench C called 'sv_hello' but scope wasn't set, perhaps due to dpi import
+call without 'context', or missing svSetScope. See IEEE 1800-2023 35.5.3.
+Aborting...
+
+<span class="c">// run 2 (-DSTALE): other.touch() ran at t=0</span>
+LOG c scope=top.o
+LOG sv hello where=top.o.sv_hello          <span class="c">// WRONG instance, no warning</span></code></pre>
+<figure class="fig wide">
+<svg class="dg" viewBox="0 0 720 240" role="img" aria-label="Timeline of the scope register. At t=0 a context import in top.o sets it to top.o. At t=1 a generic import in top does not update it, so the export call resolves in top.o instead of top.">
+<text class="ttl" x="20" y="24">SCOPE REGISTER OVER TIME (-DSTALE RUN)</text>
+<line class="e" x1="60" y1="190" x2="690" y2="190" marker-end="url(#ah)"/><text class="t" x="680" y="210">time</text>
+<line class="guide" x1="160" y1="40" x2="160" y2="190"/><text class="t mid" x="160" y="210">t=0</text>
+<line class="guide" x1="460" y1="40" x2="460" y2="190"/><text class="t mid" x="460" y="210">t=1</text>
+<rect class="box soft" x="60" y="140" width="100" height="34" rx="6"/><text class="mid cen" x="110" y="157">NULL</text>
+<rect class="box hot" x="160" y="140" width="520" height="34" rx="6"/><text class="mid cen" x="420" y="157">top.o   (never changed again)</text>
+<rect class="box" x="100" y="50" width="130" height="50" rx="8"/><text class="lbl" x="165" y="66">top.o.touch()</text><text class="note mid" x="165" y="86">context: SETS scope</text>
+<path class="e hot" d="M160,100 V140" marker-end="url(#ah-acc)"/>
+<rect class="box" x="380" y="50" width="160" height="50" rx="8"/><text class="lbl" x="460" y="66">top.call_export()</text><text class="note mid" x="460" y="86">generic: leaves it</text>
+<path class="e dash" d="M460,100 V140"/>
+<text class="hotx mid" x="600" y="116">sv_hello() → top.o.sv_hello</text>
+<text class="note mid" x="600" y="133">(the author meant top.sv_hello)</text>
+</svg>
+<figcaption><b>Fig. 0.4</b>A generic import does not touch the scope register, so an export call inside it uses whatever the last context call left there. Verilator only diagnoses the case where nothing was ever set.</figcaption>
+</figure>
+<p class="hv">The rule is mechanical: if the C body (or anything it calls) calls an export, uses VPI, or calls <code>svGetScope</code>, the import is <code>context</code>. A generic import that calls an export "works" in a small test because some earlier context call happened to leave the right scope. In the full testbench it calls the export of whichever instance ran last.</p>
+<p>In run 1 the warning comes from Verilator's runtime when C asks for the scope from a non-context call. In run 2 there is no warning at all. The LRM makes the export call from a non-context import an error, but how loudly a given simulator diagnoses it is tool-dependent. Don't rely on getting a diagnostic.</p>
+
+<!-- 0.7 -->
+<h3 id="t-scope"><span class="no">0.7</span>The scope API (Samples 12.48–12.50)</h3>
+<p>Six functions from <code>svdpi.h</code> (IEEE 1800-2023 Annex I) manage the scope register. All of them require being inside a context call (or after an explicit <code>svSetScope</code>):</p>
+<div class="tbl"><table>
+<thead><tr><th>Function</th><th>Does</th><th>Measured on Verilator</th></tr></thead>
+<tbody>
+<tr><td class="mono">svScope svGetScope(void)</td><td>the current scope (the import's instance)</td><td>NULL from a non-context first call</td></tr>
+<tr><td class="mono">svScope svSetScope(svScope)</td><td>sets it, <b>returns the previous one</b></td><td>yes; restore it when done</td></tr>
+<tr><td class="mono">const char* svGetNameFromScope(svScope)</td><td>hierarchical name</td><td><code>top.b1</code>, <code>top.gen[0].u</code> (no <code>TOP.</code> prefix)</td></tr>
+<tr><td class="mono">svScope svGetScopeFromName(const char*)</td><td>lookup by full name, NULL if absent</td><td><code>"top.b2"</code> ✓; <code>"TOP.top.b2"</code>, <code>"b2"</code> ✗</td></tr>
+<tr><td class="mono">int svGetCallerInfo(const char**, int*)</td><td>SV file:line of the import call</td><td>works; path as on the command line</td></tr>
+<tr><td class="mono">svPutUserData / svGetUserData</td><td>attach a <code>void*</code> to a scope, keyed by a pointer</td><td>works (0.8)</td></tr>
+</tbody></table></div>
+<p>Sample 12.48 saves a scope in one call and jumps back into it in a later one. The lab version has two instances of <code>block</code>, because it exposes a trap the book's single instance hides:</p>
+<pre class="c"><code><span class="c">// lab/setscope.c (Sample 12.48, plus restoring the scope)</span>
+static svScope my_scope;                         <span class="c">// an opaque pointer: safe to keep</span>
+void save_my_scope(void) { my_scope = svGetScope(); }
+void c_display(void) {
+  printf("LOG c called_from=%s\n", svGetNameFromScope(svGetScope()));
+  svScope prev = svSetScope(my_scope);           <span class="c">// returns the previous scope</span>
+  printf("LOG c now_in=%s prev=%s\n", svGetNameFromScope(svGetScope()), svGetNameFromScope(prev));
+  sv_display();                                  <span class="c">// block's export, not top's</span>
+  svSetScope(prev);                              <span class="c">// restore</span>
+}</code></pre>
+<pre><code>LOG c called_from=top.b2         <span class="c">// b2's initial ran first: save_my_scope() -> b2</span>
+LOG c now_in=top.b2 prev=top.b2
+LOG sv where=top.b2.sv_display
+LOG c called_from=top.b1         <span class="c">// then b1's initial: save_my_scope() -> b1 (overwrites!)</span>
+LOG c now_in=top.b1 prev=top.b1
+LOG sv where=top.b1.sv_display
+LOG c called_from=top            <span class="c">// t=1: top calls c_display</span>
+LOG c now_in=top.b1 prev=top     <span class="c">// lands in the LAST saved scope</span>
+LOG sv where=top.b1.sv_display</code></pre>
+<figure class="fig">
+<svg class="dg" viewBox="0 0 720 250" role="img" aria-label="Hierarchy tree: top with exports sv_display, children b1 and b2 each with their own sv_display. A single static svScope variable in C points to whichever block saved it last.">
+<text class="ttl" x="20" y="24">HIERARCHY, EXPORT COPIES, AND ONE C GLOBAL</text>
+<rect class="box" x="260" y="40" width="200" height="54" rx="8"/><text class="lbl" x="360" y="58">top</text><text class="note mid" x="360" y="80">sv_display · c_display</text>
+<rect class="box" x="120" y="150" width="200" height="54" rx="8"/><text class="lbl" x="220" y="168">top.b1</text><text class="note mid" x="220" y="190">sv_display · save_my_scope</text>
+<rect class="box" x="400" y="150" width="200" height="54" rx="8"/><text class="lbl" x="500" y="168">top.b2</text><text class="note mid" x="500" y="190">sv_display · save_my_scope</text>
+<path class="e" d="M330,94 L240,150"/><path class="e" d="M390,94 L480,150"/>
+<rect class="reg hot" x="20" y="60" width="150" height="44" rx="6"/><text class="lbl" x="95" y="76">C: my_scope</text><text class="note mid" x="95" y="94">last writer wins</text>
+<path class="e hot" d="M95,104 L170,150" marker-end="url(#ah-acc)"/>
+<path class="e dash" d="M170,82 C380,120 450,130 480,150" marker-end="url(#ah)"/><text class="t" x="140" y="124">(b2: overwritten)</text>
+<text class="note" x="20" y="236">Initial-block order between instances is unspecified (Verilator: b2 before b1). One global = one instance.</text>
+</svg>
+<figcaption><b>Fig. 0.5</b>Each instance has its own export copies. A C global holding one <code>svScope</code> can only remember one of them, and which one depends on initial-block order, which the LRM leaves unspecified. Per-instance data belongs <em>on</em> the scope (0.8), not in one global.</figcaption>
+</figure>
+<p>Lookup by name is how C reaches an instance it was never called from. That is useful for broadcast-style models (exercise 7). Verilator accepts the name exactly as <code>%m</code> prints it, including generate blocks (<code>"top.gen[0].u"</code>), and rejects the internal <code>TOP.</code> prefix and relative names.</p>
+<div class="callout errata"><p>§12.8.6 says: "use the routine svGetScope to get a handle to the current scope, and then use that handle in a call to <b>svGetScope</b> to make the C code think it is inside another context". The second one is <code>svSetScope</code>. The book's code (Sample 12.48) is right. Also, the book never restores the previous scope. Inside one import call it doesn't matter, but helper code that sets a scope and returns should put the old one back.</p></div>
+
+<!-- 0.8 -->
+<h3 id="t-user"><span class="no">0.8</span>Per-scope user data: instance state without a chandle</h3>
+<p><a href="../03_state_and_handles/guide.html">Step 03</a> gave each SV instance its own C state by returning a <code>chandle</code> from a constructor and passing it back on every call. The scope gives a second way that needs no extra argument: <code>svPutUserData(scope, key, ptr)</code> hangs a pointer on the instance, and <code>svGetUserData(scope, key)</code> gets it back. The key is any unique pointer. The address of a private static is the idiom, so two C libraries never collide.</p>
+<pre class="c"><code><span class="c">// lab/setscope.c: a counter per calling instance (import is context: it reads the scope)</span>
+static int key;                                  <span class="c">// &amp;key = "my" slot on any scope</span>
+int bump(void) {
+  svScope s = svGetScope();
+  int* n = (int*)svGetUserData(s, &amp;key);
+  if (!n) { n = (int*)calloc(1, sizeof *n); svPutUserData(s, &amp;key, n); }
+  return ++*n;
+}</code></pre>
+<pre><code>LOG bump where=top.b2 n=1
+LOG bump where=top.b1 n=1
+LOG bump where=top n=4        <span class="c">// top called it 4 times; b1 and b2 once each</span></code></pre>
+<p>Chandle or user data? Use the chandle when SV creates and destroys the C object explicitly: dynamic objects, classes, many models per instance. Use user data when the C state is naturally "one per module instance", such as a memory model or a per-port checker, and you want SV call sites to stay argument-free. Both leak if nobody frees them. Freeing user data at the end of simulation needs a <code>final</code> block that calls a context import.</p>
+
+<!-- 0.9 -->
+<h3 id="t-tasks"><span class="no">0.9</span>Tasks across the boundary</h3>
+<p>Both directions accept tasks as well as functions: <code>import "DPI-C" context task</code> and <code>export "DPI-C" task</code>. The LRM (Annex H) gives both an <code>int</code> return on the C side. It is not a value but a <b>disable flag</b>. If SV <code>disable</code>s a block while a task call chain is inside C, the exported task returns 1. C must then clean up, call <code>svAckDisabledState()</code> and return 1 from the import task, so the simulator can unwind. <code>svIsDisabledState()</code> tells C whether that is happening.</p>
+<pre class="c"><code><span class="c">// lab/xtask.c: imported task looping over a zero-time exported task</span>
+int c_task(int n) {                        <span class="c">// import task: returns int (disable ack), 0 = normal</span>
+  for (int i = 0; i &lt; n; i++) {
+    int o;
+    sv_task(i, &amp;o);                        <span class="c">// export task. LRM: returns int. Verilator: void</span>
+    printf("LOG c i=%d o=%d\n", i, o);
+  }
+  printf("LOG c disabled_state=%d\n", svIsDisabledState());
+  return 0;
+}</code></pre>
+<pre><code>LOG c i=0 o=0
+LOG c i=1 o=10
+LOG c i=2 o=20
+LOG c disabled_state=0
+LOG sv calls=3 t=0</code></pre>
+<p>The generated header reveals the deviation: <code>extern void sv_task(int i, int* o);</code> for the export, and <code>extern int c_task(int n);</code> for the import. The book's footnote 2 says VCS also declared exported tasks as <code>void</code>. Portable C therefore never uses the return value of an exported task. In Verilator the disable protocol cannot trigger anyway, because an exported task can't block (0.10), so no SV <code>disable</code> can ever catch a call chain inside C.</p>
+<div class="callout trap"><p>An imported <b>function</b> that calls an exported <b>task</b> is illegal: a function can't call a task, on either side of the boundary. Verilator 5.052 accepts it as long as the task has no timing controls (<code>lab/fn2task.sv</code> prints <code>LOG sv waited t=0</code>). A stricter simulator is entitled to reject it, so the code isn't portable. If C calls an exported task, import the C routine as a <code>context task</code>.</p></div>
+
+<!-- 0.10 -->
+<h3 id="t-time"><span class="no">0.10</span>Exported tasks that wait: the book's model, Verilator's wall</h3>
+<p>§12.8.3 is the most ambitious use of DPI in the chapter. C reads a command file and calls exported SV tasks that <em>consume simulation time</em> (Sample 12.40: <code>mem_write</code> takes <code>#10</code>, <code>mem_read</code> takes <code>#20</code>). For this to work, the simulator must be able to suspend a C function mid-body while other SV processes run, and resume it later. Commercial simulators do it by giving each context task call its own stack, a coroutine. That is why the book insists that <code>read_file</code> be a <code>context task</code> "as the simulator needs to create a separate stack".</p>
+<pre class="sv"><code><span class="c">// lab/mem_task.sv: Sample 12.40 as printed (fixed OCR)</span>
+<span class="k">module</span> top;
+  <span class="k">import</span> "DPI-C" <span class="k">context task</span> read_file(<span class="k">string</span> fname);
+  <span class="k">export</span> "DPI-C" <span class="k">task</span> mem_read;
+  <span class="k">export</span> "DPI-C" <span class="k">task</span> mem_write;
+  <span class="k">export</span> "DPI-C" <span class="k">function</span> mem_build;
+  <span class="k">initial</span> read_file("mem.dat");
+  <span class="k">int</span> mem[];
+  <span class="k">function void</span> mem_build(<span class="k">input int</span> size); mem = <span class="k">new</span>[size]; <span class="k">endfunction</span>
+  <span class="k">task</span> mem_read(<span class="k">input int</span> addr, <span class="k">output int</span> data); #20 data = mem[addr]; <span class="k">endtask</span>
+  <span class="k">task</span> mem_write(<span class="k">input int</span> addr, <span class="k">input int</span> data); #10 mem[addr] = data; <span class="k">endtask</span>
+<span class="k">endmodule</span></code></pre>
+<pre><code>%Error-UNSUPPORTED: mem_task.sv:15:5: Unsupported: Timing controls inside DPI-exported tasks
+%Error-UNSUPPORTED: mem_task.sv:18:5: Unsupported: Timing controls inside DPI-exported tasks</code></pre>
+<p>The lab checks the three ways to wait. <code>#5</code>, <code>@(posedge clk)</code>, and a delay buried in a task that the exported task calls are all rejected at compile time with the same message (<code>lab/xtime.sv</code>, <code>-DAT</code>, <code>-DNESTED</code>). The exported task itself is fine as long as nothing under it can block (<code>lab/xtask.sv</code>).</p>
+<figure class="fig wide">
+<svg class="dg" viewBox="0 0 720 300" role="img" aria-label="Two control-flow models. Push: C owns the loop and calls exported SV tasks that block, which needs the simulator to suspend C. Pull: SV owns the loop, calls a C iterator function for the next command, then runs a timed SV task; C never blocks.">
+<text class="ttl" x="20" y="24">PUSH (BOOK, §12.8.3)</text><text class="ttl" x="380" y="24">PULL (PORTABLE, 0.13)</text>
+<rect class="box soft" x="20" y="40" width="320" height="250" rx="10"/><rect class="box soft" x="380" y="40" width="320" height="250" rx="10"/>
+<rect class="box hot" x="40" y="60" width="280" height="44" rx="8"/><text class="lbl" x="180" y="82">C: while (cmd = read()) …</text>
+<rect class="box" x="70" y="130" width="230" height="40" rx="8"/><text class="lbl" x="185" y="150">SV export task #10</text>
+<path class="e hot" d="M120,104 V130" marker-end="url(#ah-acc)"/><text class="t" x="128" y="122">call</text>
+<text class="hotx mid" x="185" y="196">C frame must be SUSPENDED</text><text class="note mid" x="185" y="216">for 10 ns of sim time</text>
+<text class="note mid" x="185" y="246">commercial sims: own stack per call</text><text class="hotx mid" x="185" y="268">Verilator 5.052: compile error</text>
+<rect class="box hot" x="400" y="60" width="280" height="44" rx="8"/><text class="lbl" x="540" y="82">SV: while (cmd_next(…))</text>
+<rect class="box" x="400" y="130" width="130" height="40" rx="8"/><text class="lbl" x="465" y="150">C: next cmd</text>
+<rect class="box" x="550" y="130" width="130" height="40" rx="8"/><text class="lbl" x="615" y="150">SV task #10</text>
+<path class="e" d="M450,104 V130" marker-end="url(#ah)"/><path class="e" d="M615,104 V130" marker-end="url(#ah)"/>
+<text class="note mid" x="540" y="196">C returns at once (zero time)</text><text class="note mid" x="540" y="216">SV blocks in its own process</text>
+<text class="note mid" x="540" y="246">every simulator, every flavor</text><text class="hotx mid" x="540" y="268">Verilator: runs (90 ns, 0.13)</text>
+</svg>
+<figcaption><b>Fig. 0.6</b>Who owns the loop decides who has to block. In the push model C blocks inside SV time, which needs simulator coroutines. In the pull model C is an iterator and every wait happens in an SV process, which every simulator can schedule.</figcaption>
+</figure>
+<div class="callout note" style="--c-label:'In Verilator'"><p>Verilator's <code>--timing</code> implements SV processes as C++20 coroutines, but a DPI call is a plain C call. A C function in the middle of a call chain can't be suspended, so Verilator forbids anything below an export from waiting. Lifting that would need a separate stack per DPI call, which is what commercial simulators pay for. Design new C/SV code so C never needs to wait, and it runs everywhere.</p></div>
+
+<!-- 0.11 -->
+<h3 id="t-mem"><span class="no">0.11</span>The command-file memory, zero-time version (Samples 12.37–12.39, 12.42)</h3>
+<p>The book's running example is a memory model that a C program drives from a text file. This is the realistic shape of "legacy C stimulus" or "a C test program pokes the model". The zero-time version, with exported <em>functions</em>, runs on every simulator. The lab grows Sample 12.38 to read and write so that it can execute the file of Sample 12.42 (<code>M 100</code>, <code>W 12 34</code>, <code>W 99 8</code>, <code>R 12 34</code>):</p>
+<pre class="sv"><code><span class="c">// lab/mem_func.sv</span>
+<span class="k">import</span> "DPI-C" <span class="k">context function int</span> read_file(<span class="k">string</span> fname);   <span class="c">// returns #errors</span>
+<span class="k">export</span> "DPI-C" <span class="k">function</span> mem_build;
+<span class="k">export</span> "DPI-C" <span class="k">function</span> mem_read;
+<span class="k">export</span> "DPI-C" <span class="k">function</span> mem_write;
+<span class="k">int</span> mem[];
+<span class="k">function void</span> mem_build(<span class="k">input int</span> size);   mem = <span class="k">new</span>[size];  <span class="k">endfunction</span>
+<span class="k">function int</span>  mem_read(<span class="k">input int</span> addr);    <span class="k">return</span> mem[addr]; <span class="k">endfunction</span>
+<span class="k">function void</span> mem_write(<span class="k">input int</span> addr, <span class="k">input int</span> data); mem[addr] = data; <span class="k">endfunction</span></code></pre>
+<pre class="c"><code><span class="c">// lab/mem_func.c (core): the book's Sample 12.37 without its two bugs</span>
+FILE* f = fopen(fname, "r");
+if (!f) { printf("LOG c error=cannot_open file=%s\n", fname); return 1; }   <span class="c">// book: no check</span>
+while (fscanf(f, " %c", &amp;cmd) == 1) {          <span class="c">// book: while (!feof(file)) cmd = fgetc(file);</span>
+  switch (cmd) {
+    case 'M': fscanf(f, "%d", &amp;a);        mem_build(a);    break;
+    case 'W': fscanf(f, "%d %d", &amp;a, &amp;b); mem_write(a, b); break;
+    case 'R': fscanf(f, "%d %d", &amp;a, &amp;b);
+              if (mem_read(a) != b) errs++;  break;
+  }
+}</code></pre>
+<pre><code>LOG c read addr=12 data=34 exp=34
+LOG memf size=100 m12=34 m99=8 errs=0 t=0</code></pre>
+<p>Everything happens at <code>t=0</code>, which is the limitation the book fixes next with timed tasks (0.10), and which Verilator forces us to fix differently (0.13). The <code>while (!feof())</code> idiom is a classic C bug. <code>feof</code> only becomes true <em>after</em> a read fails, so the loop body runs once more with <code>cmd = EOF</code>. Here the switch ignores it, which is why the book gets away with it. Testing the return of the read itself (<code>fscanf(...) == 1</code>) is the correct form. The leading space in <code>" %c"</code> also skips the newlines that the book's <code>fgetc</code> loop had to fall through.</p>
+
+<!-- 0.12 -->
+<h3 id="t-objs"><span class="no">0.12</span>Objects behind an index (Samples 12.43–12.45)</h3>
+<p>Class methods can't be exported, and an SV class handle can't cross DPI: there is no C type for it, unlike <code>chandle</code> in the other direction. The book's answer is to export <em>module-level wrapper</em> functions and give C an <b>integer index</b> into a queue of handles. C says "memory 1, address 12". The wrapper does <code>memq[1].read(12)</code>. This is the same trick as a file descriptor in Unix.</p>
+<pre class="sv"><code><span class="c">// lab/mem_oop.sv (core)</span>
+Memory memq[$];
+<span class="k">function automatic int</span> mem_build(<span class="k">input int</span> size);  <span class="c">// automatic: see trap below</span>
+  Memory m = <span class="k">new</span>(size);
+  memq.push_back(m);
+  <span class="k">return</span> memq.size() - 1;                              <span class="c">// the "handle" C receives</span>
+<span class="k">endfunction</span>
+<span class="k">function int</span>  mem_read(<span class="k">input int</span> idx, addr);        <span class="k">return</span> memq[idx].read(addr); <span class="k">endfunction</span>
+<span class="k">function void</span> mem_write(<span class="k">input int</span> idx, addr, data); memq[idx].write(addr, data); <span class="k">endfunction</span></code></pre>
+<pre><code><span class="c">// Sample 12.43 file: M0 1000, M1 2000, W0 12 34, W1 12 88, W0 99 18, R1 22 44, R0 12 34, R1 12 88</span>
+LOG c read mem=1 addr=22 data=0 exp=44 MISMATCH     <span class="c">// the book's file reads an address never written</span>
+LOG c read mem=0 addr=12 data=34 exp=34 ok
+LOG c read mem=1 addr=12 data=88 exp=88 ok
+LOG memoop n=2 m0_12=34 m1_12=88 m0_99=18 errs=1</code></pre>
+<p>Location 12 holds 34 in memory 0 and 88 in memory 1: two objects, one C program, no handles crossing the boundary. The <code>R1 22 44</code> line of Sample 12.43 reads a location that no command wrote, so it is a guaranteed mismatch. The lab keeps it as a built-in negative test.</p>
+<div class="callout errata"><p>The text of §12.8.4 says <code>mem_build</code> "returns the queue index, idx, to the C code". Sample 12.44 declares it <code>function void</code>, and Sample 12.45 ignores the return and trusts the number written in the file (<code>M0</code>, <code>M1</code>). If the file said <code>M1</code> first, C and SV would disagree on every later access. The lab returns the index and C checks it against the file.</p></div>
+<div class="callout trap"><p>Functions in a module are <code>static</code> by default. <code>Memory m = new(size);</code> inside a static function is a <em>static variable initializer</em>, evaluated once at time 0 and not per call. Verilator rejects it (<code>%Error-UNSUPPORTED: Static variable initializer</code>), and other tools may silently share one object. <code>function automatic</code>, or a separate declaration and assignment, fixes it. The same trap in an <code>initial</code> block compiles silently. See exercise 5, a bug that really bit while this lab was being written.</p></div>
+
+<!-- 0.13 -->
+<h3 id="t-pull"><span class="no">0.13</span>The pull model: the timed memory on every simulator</h3>
+<p>To give the memory real timing (writes 10 ns, reads 20 ns) without blocking inside C, invert the control flow (Fig. 0.6). SV owns the loop and time. C becomes a small iterator over the command file plus a checker. Each C call returns immediately, so the imports are plain generic functions: no <code>context</code>, no exports, nothing that can go stale.</p>
+<pre class="sv"><code><span class="c">// lab/mem_pull.sv (core)</span>
+<span class="k">import</span> "DPI-C" <span class="k">function int</span>  cmd_next(<span class="k">output byte</span> cmd, <span class="k">output int</span> idx, addr, data);
+<span class="k">import</span> "DPI-C" <span class="k">function void</span> cmd_result(<span class="k">int</span> idx, addr, data, <span class="k">longint</span> t);
+<span class="k">class</span> Memory;
+  <span class="k">int</span> mem[];
+  <span class="k">function</span> <span class="k">new</span>(<span class="k">int</span> size); mem = <span class="k">new</span>[size]; <span class="k">endfunction</span>
+  <span class="k">task</span> read(<span class="k">int</span> addr, <span class="k">output int</span> data); #20 data = mem[addr]; <span class="k">endtask</span>
+  <span class="k">task</span> write(<span class="k">int</span> addr, <span class="k">int</span> data);       #10 mem[addr] = data; <span class="k">endtask</span>
+<span class="k">endclass</span>
+<span class="k">initial begin</span>
+  <span class="k">byte</span> cmd; <span class="k">int</span> idx, addr, data;
+  Memory m;                         <span class="c">// NOT "Memory m = new(..)": static initializer</span>
+  void'(cmd_open("mem_oop.dat"));
+  <span class="k">while</span> (cmd_next(cmd, idx, addr, data))
+    <span class="k">case</span> (cmd)
+      "M": <span class="k">begin</span> m = <span class="k">new</span>(addr); memq.push_back(m); <span class="k">end</span>
+      "W": memq[idx].write(addr, data);
+      "R": <span class="k">begin</span> memq[idx].read(addr, data); cmd_result(idx, addr, data, $time); <span class="k">end</span>
+    <span class="k">endcase</span>
+<span class="k">end</span></code></pre>
+<pre><code>LOG c read mem=1 addr=22 data=0 exp=44 t=50 MISMATCH
+LOG c read mem=0 addr=12 data=34 exp=34 t=70 ok
+LOG c read mem=1 addr=12 data=88 exp=88 t=90 ok
+LOG pull errs=1 t=90 ticks=89        <span class="c">// an always #1 counter kept running meanwhile</span></code></pre>
+<figure class="fig wide">
+<svg class="dg" viewBox="0 0 720 170" role="img" aria-label="Timeline 0 to 90 ns: two zero-time M commands, three 10 ns writes ending at 10, 20, 30 ns, three 20 ns reads ending at 50, 70, 90 ns; read results are reported to C at those times.">
+<text class="ttl" x="20" y="22">mem_pull: 3 WRITES × 10 ns + 3 READS × 20 ns = 90 ns  (scale 7 px/ns)</text>
+<line class="e" x1="40" y1="120" x2="690" y2="120" marker-end="url(#ah)"/>
+<g class="t mid"><text x="40" y="140">0</text><text x="110" y="140">10</text><text x="180" y="140">20</text><text x="250" y="140">30</text><text x="390" y="140">50</text><text x="530" y="140">70</text><text x="670" y="140">90</text></g>
+<rect class="s1" x="40" y="70" width="70" height="30"/><text class="mid cen" x="75" y="85" style="font-size:12px">W0 12</text>
+<rect class="s1" x="110" y="70" width="70" height="30"/><text class="mid cen" x="145" y="85" style="font-size:12px">W1 12</text>
+<rect class="s1" x="180" y="70" width="70" height="30"/><text class="mid cen" x="215" y="85" style="font-size:12px">W0 99</text>
+<rect class="s0" x="250" y="70" width="140" height="30"/><text class="mid cen" x="320" y="85" style="font-size:12px">R1 22 → 0 ✗</text>
+<rect class="s0" x="390" y="70" width="140" height="30"/><text class="mid cen" x="460" y="85" style="font-size:12px">R0 12 → 34 ✓</text>
+<rect class="s0" x="530" y="70" width="140" height="30"/><text class="mid cen" x="600" y="85" style="font-size:12px">R1 12 → 88 ✓</text>
+<text class="note" x="40" y="56">M0, M1 at t=0 (zero time)</text>
+<g class="dot hot"><circle cx="390" cy="120" r="4"/><circle cx="530" cy="120" r="4"/><circle cx="670" cy="120" r="4"/></g>
+<text class="note" x="40" y="162">dots: cmd_result() calls into C, each in zero time</text>
+</svg>
+<figcaption><b>Fig. 0.7</b>The pull model's real timeline from the lab log. Time advances only inside SV tasks. C sees each read result together with its <code>$time</code>.</figcaption>
+</figure>
+<p>Two details in <code>mem_pull.c</code> are worth stealing. First, <code>cmd_next</code> sets <code>*addr = *data = 0</code> before parsing. An <code>output</code> argument that C doesn't write reaches SV as <b>whatever garbage was in the temporary</b>. Verilator calls <code>skip_out(k__Vcvt, &amp;o__Vcvt)</code> with an uninitialized local and copies it back. <code>lab/outarg.sv</code> starts with <code>o = 7</code> and reads back <code>32711</code> and <code>1114656704</code> (the values vary per run). Outputs are not "unchanged if untouched". See <a href="../02_data_types/guide.html">step 02</a> on argument directions. Second, the expected values stay in C (a small queue of <code>exp</code>), so the checker owns the file format and SV only reports what it saw. That split, with SV owning time and C owning data and verdicts, is the same one the golden-model scoreboard of <a href="../06_golden_model_c/guide.html">step 06</a> uses.</p>
+<p class="hv">The pull model is the default design for new C/SV (and Python/SV) code. Every call is a zero-time generic function, so it is portable to every simulator, cheap (no context), immune to stale scopes, and C never needs to block. Reach for exports only when C genuinely has to call into SV mid-computation: callbacks, error reporting with <code>$error</code>, reading SV configuration.</p>
+
+<!-- 0.14 -->
+<h3 id="t-errata"><span class="no">0.14</span>Book errata and dated parts (§12.7–12.8)</h3>
+<ul>
+<li><b><code>io_printf</code></b> (Samples 12.35, 12.41, 12.45, 12.48) is a PLI/VCS routine from <code>veriuser.h</code>. Use <code>printf</code> plus <code>fflush(stdout)</code>, so C and SV output stay in order.</li>
+<li><b>§12.8.6 text</b>: "a call to svGetScope" should be <code>svSetScope</code> (0.7).</li>
+<li><b>Sample 12.44 vs text</b>: <code>mem_build</code> is <code>void</code> but the text says it returns the index (0.12).</li>
+<li><b>Sample 12.43</b>: <code>R1 22 44</code> reads an unwritten location, a guaranteed mismatch (0.12).</li>
+<li><b>Samples 12.37/12.41/12.45</b>: <code>while (!feof(file))</code> and an unchecked <code>fopen</code>; the book admits "error checking has been removed" (0.11).</li>
+<li><b>Sample 12.41</b>: the book declares exported tasks <code>extern int</code> "according to the LRM", with a footnote that VCS used <code>void</code>. Verilator also uses <code>void</code>. Include the generated header and never use the return (0.9).</li>
+<li><b>Sample 12.40 / §12.8.3</b>: legal SV, but not portable to Verilator (0.10). The pull model (0.13) is the portable form.</li>
+</ul>
+
+<!-- 0.15 -->
+<h3 id="t-rules"><span class="no">0.15</span>Rules of thumb</h3>
+<ol>
+<li>Declare the innermost true flavor: pure ⊂ generic ⊂ context. Anything that reaches an export, VPI or the scope API is <code>context</code>, with no exceptions.</li>
+<li>Never let SV semantics depend on <em>how many times</em> C runs. Stateful C goes in procedural code at defined events, never in <code>assign</code>/<code>always_comb</code>.</li>
+<li>Include the generated <code>Vtop__Dpi.h</code> in every C file; never hand-write export prototypes.</li>
+<li>Per-instance C state: a chandle when SV manages lifetime, <code>svPutUserData</code> when it is "one per instance". Not one C global holding one <code>svScope</code>.</li>
+<li>If you call <code>svSetScope</code>, restore the previous scope before returning.</li>
+<li>C never waits. If a C model seems to need simulation time, turn it inside out: SV loops and waits, C is an iterator (pull model).</li>
+<li>Exported tasks: zero-time only (on Verilator), and called only from <code>context task</code> imports, never from imported functions.</li>
+<li>C must write every <code>output</code> argument on every path.</li>
+</ol>
+
+<h2 id="s1"><span class="no">§1</span>Learning objectives</h2>
+<ul>
+<li>Write an <code>export "DPI-C"</code> function and task, call it from C through the generated header, and predict which instance's copy runs.</li>
+<li>Classify any C routine as pure, generic or context from what its body touches, and state what each promise lets the simulator do.</li>
+<li>Explain the two failure modes of a missing <code>context</code> (fatal NULL scope vs silent stale scope) and spot them in review.</li>
+<li>Use <code>svGetScope</code>, <code>svSetScope</code> (and restore), <code>svGetNameFromScope</code>, <code>svGetScopeFromName</code>, <code>svGetCallerInfo</code> and per-scope user data.</li>
+<li>Know the Annex H task protocol (int disable flag, <code>svIsDisabledState</code>/<code>svAckDisabledState</code>) and where Verilator deviates (void exported tasks, no timing in exports, function→task accepted).</li>
+<li>Port the book's command-file memory to Verilator: zero-time exports, objects behind an index, and the timed version as a pull model.</li>
+<li>Choose between push and pull control flow for a C model, and explain why pull is the portable default.</li>
+</ul>
+<p>Prerequisites: <a href="../01_first_call/guide.html">01</a> (import, build, generated header), <a href="../02_data_types/guide.html">02</a> (types, output arguments), <a href="../03_state_and_handles/guide.html">03</a> (chandle and instance state). <a href="../04_arrays_structs_strings/guide.html">04</a> is not needed except for the string arguments in exercise 10.</p>
+
+<h2 id="s2"><span class="no">§2</span>Exercises</h2>
+<p>Solutions with code live in <code>lab/ex/</code> and are built and checked by <code>check.py</code>. Try first, then open.</p>
+
+<div class="q"><p><span class="n">1 ★</span> <b>Predict the output.</b> Three scopes export <code>who()</code>, which prints <code>%m</code>. <code>hop()</code> calls <code>who()</code> after optionally switching to a pinned scope. <code>pin()</code> pins <code>"top.m"</code> by name.</p>
+<pre class="sv"><code><span class="k">module</span> leaf; <span class="c">/* import hop (context), export who */</span> <span class="k">initial</span> #2 hop(); <span class="k">endmodule</span>
+<span class="k">module</span> mid;  <span class="c">/* export who */</span> leaf l(); <span class="k">endmodule</span>
+<span class="k">module</span> top;  <span class="c">/* import hop, pin (context), export who */</span>
+  mid m();
+  <span class="k">initial begin</span> #1 hop(); #2 pin(); #1 hop(); #1 $finish; <span class="k">end</span>
+<span class="k">endmodule</span></code></pre>
+<pre class="c"><code>static svScope pinned;
+void pin(void) { pinned = svGetScopeFromName("top.m"); }
+void hop(void) { if (pinned) svSetScope(pinned); who(); }</code></pre>
+<details><summary>Show solution</summary><div class="a"><p><code>t=1</code>: called from <code>top</code>, nothing pinned, so it prints <code>top.who</code>. <code>t=2</code>: called from <code>top.m.l</code>, so <code>top.m.l.who</code>. <code>t=3</code>: <code>pin()</code>. <code>t=4</code>: from <code>top</code>, but now switched to <code>top.m</code>, so <code>top.m.who</code>. Lab: <code>ex/predict.sv</code> prints exactly <code>top.who</code>, <code>top.m.l.who</code>, <code>top.m.who</code>. Note that <code>mid</code> has no import at all. An export copy exists in every instance of a module that declares it, reachable only by setting the scope.</p></div></details></div>
+
+<div class="q"><p><span class="n">2 ★</span> <b>Ex. 12.8.</b> Write <code>shift_c(i, n)</code> in C, with a 32-bit unsigned <code>i</code>: shift left for <code>n&gt;0</code>, right for <code>n&lt;0</code>, unchanged for 0. C must not shift itself. It calls an exported SV <code>void</code> function <code>shift_sv</code>. Test <code>n</code> = 4, −4, 0, 40, −31 on <code>32'h8000_00F0</code>.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">// ex/ex12_8.sv</span>
+<span class="k">import</span> "DPI-C" <span class="k">context function int unsigned</span> shift_c(<span class="k">int unsigned</span> i, <span class="k">int</span> n);
+<span class="k">export</span> "DPI-C" <span class="k">function</span> shift_sv;
+<span class="k">function void</span> shift_sv(<span class="k">input int unsigned</span> i, <span class="k">input int</span> n, <span class="k">output int unsigned</span> o);
+  o = (n &gt; 0) ? i &lt;&lt; n : (n &lt; 0) ? i &gt;&gt; -n : i;
+<span class="k">endfunction</span></code></pre>
+<pre class="c"><code>unsigned int shift_c(unsigned int i, int n) {   <span class="c">// context: it calls an export</span>
+  unsigned int o;
+  shift_sv(i, n, &amp;o);                          <span class="c">// SV output arg -> C pointer</span>
+  return o;
+}</code></pre>
+<pre><code>n=4 o=00000f00   n=-4 o=0800000f   n=0 o=800000f0   n=40 o=00000000   n=-31 o=00000001</code></pre>
+<p>The <code>n=40</code> case shows one reason to do it in SV: SV defines a shift by ≥ width as 0, while in C <code>x &lt;&lt; 40</code> on a 32-bit type is undefined behavior. <code>shift_c</code> must be <code>context</code>, otherwise you get 0.6's failure.</p></div></details></div>
+
+<div class="q"><p><span class="n">3 ★</span> <b>Find the bug.</b> A colleague's test passes in a small TB and fails in the full chip TB, where the log says <code>top.o.sv_hello</code> instead of <code>top.sv_hello</code>. The code is <code>lab/noctx.sv</code> (0.6). What is wrong, why did the small TB pass, and what is the one-word fix?</p>
+<details><summary>Show solution</summary><div class="a"><p><code>call_export</code> is imported without <code>context</code> but calls the export <code>sv_hello</code>. A generic import does not update the scope register, so the export resolves in whatever scope the last context call left behind. In the small TB that was either nothing (fatal: "scope wasn't set") or, by luck, <code>top</code> itself. In the chip TB another instance (<code>top.o</code>) made a context call first. The fix is to add <code>context</code> to the import. Lab: <code>noctx</code> (fatal) vs <code>stale</code> (silent wrong instance).</p></div></details></div>
+
+<div class="q"><p><span class="n">4 ★</span> <b>Classify.</b> Pure, generic or context? (a) <code>crc32_update(crc, byte)</code> returning the new CRC; (b) <code>crc32_feed(byte)</code> keeping the CRC in a C static; (c) a function that writes each transaction to a log file; (d) a function that reads <code>+seed=</code> with <code>vpi_get_vlog_info</code>; (e) a function that calls <code>$error</code> through an export; (f) <code>log2_ceil(n)</code>.</p>
+<details><summary>Show solution</summary><div class="a"><p>(a) pure: the result depends only on the inputs. (b) generic: hidden state, the same input gives a different result. (c) generic: I/O is a side effect, and the compiler must not drop or merge calls. (d) context: VPI. (e) context: calls an export. (f) pure. Note (b): if it were wrongly declared pure, a compiler could legally merge two <code>crc32_feed(8'h00)</code> calls into one, and the golden CRC would be wrong. Verilator happens not to (0.4).</p></div></details></div>
+
+<div class="q"><p><span class="n">5 ★★</span> <b>Find the bug (real one).</b> This pull-model TB compiles cleanly on Verilator, but every read returns 0 (<code>lab/ex/static_init_bug.sv</code>). Predict <code>errs</code>, whether <code>memq[0] == memq[1]</code>, and <code>memq[0].mem.size()</code>, then fix it.</p>
+<pre class="sv"><code><span class="k">initial begin</span>
+  <span class="k">byte</span> cmd; <span class="k">int</span> idx, addr, data;
+  void'(cmd_open("mem_oop.dat"));
+  <span class="k">while</span> (cmd_next(cmd, idx, addr, data))
+    <span class="k">case</span> (cmd)
+      "M": <span class="k">begin</span> Memory m = <span class="k">new</span>(addr); memq.push_back(m); <span class="k">end</span>
+      "W": memq[idx].write(addr, data);
+      "R": <span class="k">begin</span> memq[idx].read(addr, data); cmd_result(idx, addr, data, $time); <span class="k">end</span>
+    <span class="k">endcase</span>
+<span class="k">end</span></code></pre>
+<details><summary>Show solution</summary><div class="a"><p><code>Memory m = new(addr);</code> is a declaration with an initializer inside a <b>static</b> block, so it runs once at time 0, before the loop, with <code>addr = 0</code>. Both <code>M</code> commands push the <em>same</em> size-0 object. Writes to <code>mem[12]</code> on an empty dynamic array are ignored, and reads return the default 0. Lab: <code>LOG bug errs=3 same=1 size0=0</code>. Fix: declare <code>Memory m;</code> at the top and assign <code>m = new(addr);</code> in the branch (as in <code>mem_pull.sv</code>), or make the block <code>automatic</code>. Not a DPI bug, but it hides perfectly behind one, because the first suspect is always the C side.</p></div></details></div>
+
+<div class="q"><p><span class="n">6 ★★</span> <b>Port Sample 12.40 to Verilator.</b> Keep the book's single memory, <code>mem.dat</code> (<code>M 100</code>, <code>W 12 34</code>, <code>W 99 8</code>, <code>R 12 34</code>), and the 10/20 ns timing. C parses the file, SV does the timing and the check. Predict the end time.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">// ex/pull1.sv (core)</span>
+<span class="k">import</span> "DPI-C" <span class="k">function int</span> cmd_next(<span class="k">output byte</span> cmd, <span class="k">output int</span> addr, data, exp);
+<span class="k">while</span> (cmd_next(cmd, addr, data, exp))
+  <span class="k">case</span> (cmd)
+    "M": mem = <span class="k">new</span>[addr];
+    "W": mem_write(addr, data);             <span class="c">// #10</span>
+    "R": <span class="k">begin</span> mem_read(addr, got);           <span class="c">// #20</span>
+         <span class="k">if</span> (got !== exp) <span class="k">begin</span> errs++; $error("addr %0d: got %0d exp %0d", addr, got, exp); <span class="k">end</span>
+       <span class="k">end</span>
+  <span class="k">endcase</span></code></pre>
+<pre class="c"><code>int cmd_next(char* cmd, int* addr, int* data, int* exp) {
+  *addr = *data = *exp = 0;                 <span class="c">// every output written on every path</span>
+  if (!f || fscanf(f, " %c", cmd) != 1) return 0;
+  switch (*cmd) {
+    case 'M': fscanf(f, "%d", addr); break;
+    case 'W': fscanf(f, "%d %d", addr, data); break;
+    case 'R': fscanf(f, "%d %d", addr, exp); break;
+  }
+  return 1;
+}</code></pre>
+<p>End time 10 + 10 + 20 = <b>40 ns</b>. Lab: <code>LOG pull1 errs=0 t=40</code>. All imports are generic: no context, no exports.</p></div></details></div>
+
+<div class="q"><p><span class="n">7 ★★</span> <b>Broadcast by name with per-instance state.</b> A generate loop instantiates <code>unit #(.ID(g)) u()</code> for <code>g = 0..2</code> under <code>gen</code>. Each unit exports <code>int sv_ping(int k)</code> returning <code>ID*100 + k</code>. Write a C <code>broadcast(n)</code>, imported in <code>top</code>, that calls <code>sv_ping</code> in every unit with <code>k</code> = that unit's private call counter (starting at 1, stored with <code>svPutUserData</code> when each unit's <code>initial</code> calls <code>hello()</code>). Return the sum. What is it, and what name string finds unit 1?</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="c"><code><span class="c">// ex/broadcast.c (core)</span>
+static int key;
+void hello(void) {                         <span class="c">// context, called from each unit's initial</span>
+  int* n = (int*)malloc(sizeof *n); *n = 0;
+  svPutUserData(svGetScope(), &amp;key, n);
+}
+int broadcast(int n) {
+  svScope home = svGetScope(), s; int sum = 0; char name[64];
+  for (int i = 0; i &lt; n; i++) {
+    snprintf(name, sizeof name, "top.gen[%d].u", i);
+    if (!(s = svGetScopeFromName(name))) continue;
+    svSetScope(s);
+    int* cnt = (int*)svGetUserData(s, &amp;key);
+    sum += sv_ping(++*cnt);
+  }
+  svSetScope(home);                         <span class="c">// restore</span>
+  return sum;
+}</code></pre>
+<p>Sum = 1 + 101 + 201 = <b>303</b> (lab: <code>LOG bcast sum=303</code>). The name is <code>"top.gen[1].u"</code>, exactly as <code>%m</code> prints it. <code>broadcast</code> must be called after time 0 (<code>initial #1</code>), so that every unit's <code>hello()</code> has run. Otherwise <code>svGetUserData</code> returns NULL. The lab saw the units' initials run in the order 2, 1, 0.</p></div></details></div>
+
+<div class="q"><p><span class="n">8 ★★</span> <b>Review comment.</b> In an RTL-ish golden model wrapper someone wrote <code>assign exp_crc = c_crc_feed(in_valid, in_data);</code>, where the C function keeps the running CRC in a static. The TB "works" on one simulator. Write the review comment.</p>
+<details><summary>Show solution</summary><div class="a"><p>A stateful C function in a continuous assignment is called whenever the scheduler re-evaluates the expression, not once per accepted byte. The lab measured 11 C calls for 5 input changes on Verilator (<code>comb</code>), so the CRC would absorb bytes several times. It also runs when <code>in_valid</code> is low, and again whenever unrelated re-evaluation happens. Feed it from procedural code at the clock edge when the byte is accepted: <code>always @(posedge clk) if (in_valid &amp;&amp; !clear) exp = c_crc_feed(in_data);</code>. Or make it pure, <code>crc_next = f(crc, byte)</code>, with the state register in SV. <a href="../06_golden_model_c/guide.html">Step 06</a> does exactly that with <code>common/rtl/crc32_stream.sv</code>.</p></div></details></div>
+
+<div class="q"><p><span class="n">9 ★★★</span> <b>Ex. 12.9 + 12.10.</b> Build a class <code>Shift</code> with <code>shift_sv(i, n)</code> that stores its result in a member, and <code>shift_print()</code>. Export <code>shift_build</code> (creates a <code>Shift</code>, returns its index) and module-level wrappers. From C, create three objects, shift <code>1</code> by 4, <code>0x100</code> by −8, and <code>0xdeadbeef</code> by 0, then print all three.</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">// ex/ex12_10.sv (core)</span>
+Shift q[$];
+<span class="k">function automatic int</span> shift_build();
+  Shift s = <span class="k">new</span>(); q.push_back(s); <span class="k">return</span> q.size() - 1;
+<span class="k">endfunction</span>
+<span class="k">function void</span> shift_sv(<span class="k">int</span> idx, <span class="k">int unsigned</span> i, <span class="k">int</span> n); q[idx].shift_sv(i, n); <span class="k">endfunction</span>
+<span class="k">function void</span> shift_print(<span class="k">int</span> idx);                     q[idx].shift_print(idx); <span class="k">endfunction</span></code></pre>
+<pre class="c"><code>void c_run(void) {                          <span class="c">// context</span>
+  int a = shift_build(), b = shift_build(), c = shift_build();
+  shift_sv(a, 0x1, 4); shift_sv(b, 0x100, -8); shift_sv(c, 0xdeadbeef, 0);
+  shift_print(a); shift_print(b); shift_print(c);
+}</code></pre>
+<pre><code>LOG ex10 idx=0 result=00000010
+LOG ex10 idx=1 result=00000001
+LOG ex10 idx=2 result=deadbeef</code></pre>
+<p>Each object keeps its own result, which is the point of 12.10(d). Two details: <code>shift_build</code> must be <code>automatic</code> (0.12 trap), and an SV method name may equal the export name (<code>shift_sv</code>) because the class method is in the class scope, not the module scope.</p></div></details></div>
+
+<div class="q"><p><span class="n">10 ★★★</span> <b>C reports through SV.</b> A C checker finds mismatches. Make it report them with SV's <code>$error</code>, so they carry <code>$time</code>, count in the SV error total and obey the simulator's severity settings. Include the SV file:line of the call that triggered the check. On Verilator, what happens at the first <code>$error</code> by default?</p>
+<details><summary>Show solution</summary><div class="a">
+<pre class="sv"><code><span class="c">// ex/report.sv (core)</span>
+<span class="k">import</span> "DPI-C" <span class="k">context function void</span> c_check(<span class="k">int</span> got, <span class="k">int</span> exp);
+<span class="k">export</span> "DPI-C" <span class="k">function</span> sv_report;
+<span class="k">function void</span> sv_report(<span class="k">string</span> where, <span class="k">string</span> msg);
+  $error("[C model @ %s] %s", where, msg);
+<span class="k">endfunction</span></code></pre>
+<pre class="c"><code>void c_check(int got, int exp) {
+  if (got == exp) return;
+  const char* file; int line; char where[256], msg[128];
+  svGetCallerInfo(&amp;file, &amp;line);
+  snprintf(where, sizeof where, "%s:%d", file, line);
+  snprintf(msg, sizeof msg, "got %d exp %d", got, exp);
+  sv_report(where, msg);                    <span class="c">// SV copies the strings</span>
+}</code></pre>
+<pre><code>[10] %Error: report.sv:8: Assertion failed in top.sv_report: [C model @ ex/report.sv:12] got 4 exp 5
+-Info: ex/report.sv:8: Verilog $stop, ignored due to +verilator+error+limit
+[20] %Error: report.sv:8: Assertion failed in top.sv_report: [C model @ ex/report.sv:13] got 7 exp 9</code></pre>
+<p>By default Verilator turns the first <code>$error</code> into <code>$stop</code> and aborts. The lab runs with <code>+verilator+error+limit+10</code> to keep going. The <code>%Error</code> location is the <em>export</em>'s line (8). The useful location, that of the check, comes from <code>svGetCallerInfo</code>.</p></div></details></div>
+
+<div class="q"><p><span class="n">11 ★★★</span> <b>Design: a legacy C test on Verilator.</b> You inherit a C test written as straight-line code: <code>bus_write(0x10, 5); x = bus_read(0x14); …</code>, thousands of lines. Each access must take real bus cycles on the DUT. On a commercial simulator you would import <code>run_test</code> as a context task and export timed <code>bus_write/bus_read</code> tasks (the push model). Verilator rejects that. Sketch a design that runs the test unchanged.</p>
+<details><summary>Show solution</summary><div class="a"><p>Give the legacy test its own stack, so that it can block, but outside the simulator. Run <code>run_test()</code> on a separate OS thread (or a <code>ucontext</code>/coroutine) started from a generic import. <code>bus_write/bus_read</code> become C stubs that post a command into a one-slot mailbox and block on a condition variable until the result arrives. On the SV side, a pull loop calls a generic import <code>cmd_next()</code> each time the bus is idle. That call blocks (in wall time, zero sim time) until the test thread posts a command, then returns it. SV drives the bus for as many cycles as needed and calls <code>cmd_done(rdata)</code>, which wakes the test thread. Rules: only the simulator thread ever calls into SV or <code>svdpi.h</code> (the test thread never touches exports or scopes), and exactly one side runs at a time (strict hand-off). That keeps simulation deterministic. This is the push model's coroutine, built by hand in C, which is what commercial simulators do internally. When the test thread returns, <code>cmd_next</code> reports "done" and SV ends the test.</p></div></details></div>
+
+<h2 id="s3"><span class="no">§3</span>Quiz</h2>
+<p class="quiz-score"></p>
+
+<div class="quiz" data-answer="c"><p class="qq">1. Which export declaration is legal?</p>
+<label><input type="radio" value="a"> <code>export "DPI-C" function void sv_display();</code></label>
+<label><input type="radio" value="b"> <code>export "DPI-C" function sv_display();</code></label>
+<label><input type="radio" value="c"> <code>export "DPI-C" function sv_display;</code></label>
+<label><input type="radio" value="d"> <code>export "DPI-C" void sv_display;</code></label>
+<div class="why">The export names the routine and nothing else: no return type, no argument list, not even <code>()</code> (§12.8.1). The signature comes from the SV function declaration. Option a is the tempting one because it mirrors an import.</div></div>
+
+<div class="quiz" data-answer="b"><p class="qq">2. <code>top</code> and its child <code>b1</code> both export <code>sv_display</code> and both import the same <code>context</code> function <code>c_display</code>, which calls <code>sv_display()</code>. <code>b1</code> calls <code>c_display()</code>. Which <code>sv_display</code> runs?</p>
+<label><input type="radio" value="a"> <code>top.sv_display</code>, the outermost one</label>
+<label><input type="radio" value="b"> <code>top.b1.sv_display</code></label>
+<label><input type="radio" value="c"> Link error: duplicate symbol <code>sv_display</code></label>
+<label><input type="radio" value="d"> Unspecified</label>
+<div class="why">The context import records the caller's scope (<code>top.b1</code>), and the export call dispatches to that instance's copy. One C symbol can stand for many SV copies, so there is no duplicate symbol. Lab <code>scopes</code>.</div></div>
+
+<div class="quiz" data-answer="c"><p class="qq">3. A C function keeps a running CRC in a <code>static</code> and returns it. The best declaration is:</p>
+<label><input type="radio" value="a"> <code>pure</code>: it is a function with a return value</label>
+<label><input type="radio" value="b"> <code>context</code>: it has state</label>
+<label><input type="radio" value="c"> generic (no keyword)</label>
+<label><input type="radio" value="d"> <code>pure task</code></label>
+<div class="why">Hidden state means the same inputs can give different results, so it is not pure. It doesn't call exports, VPI or the scope API, so it doesn't need context. State alone never requires context. Imported tasks can't be pure anyway.</div></div>
+
+<div class="quiz" data-answer="a"><p class="qq">4. In the lab, how many times did C run for <code>void'(f(a)); r = f(a) + f(a); for 4× r += f(a);</code> with <code>f</code> declared <code>pure</code>?</p>
+<label><input type="radio" value="a"> 7, the same as without <code>pure</code></label>
+<label><input type="radio" value="b"> 1: all calls merged</label>
+<label><input type="radio" value="c"> 6: only the discarded call dropped</label>
+<label><input type="radio" value="d"> 2: one per distinct statement</label>
+<div class="why">Verilator 5.052 elides nothing in procedural code, even with -O3. <code>pure</code> is a license the LRM grants, not a behavior you can count on in either direction.</div></div>
+
+<div class="quiz" data-answer="d"><p class="qq">5. <code>assign y = f(x);</code> and <code>x</code> changes 5 times. How many C calls should your design assume?</p>
+<label><input type="radio" value="a"> Exactly 5</label>
+<label><input type="radio" value="b"> Exactly 6 (initial value + 5)</label>
+<label><input type="radio" value="c"> At most 5 if <code>f</code> is pure</label>
+<label><input type="radio" value="d"> Any number: it is up to the scheduler (the lab saw 11)</label>
+<div class="why">Continuous assignments are re-evaluated whenever the simulator decides to. The count is not SV semantics, so a design must not depend on it. Stateful C belongs in procedural code at defined events.</div></div>
+
+<div class="quiz" data-answer="b"><p class="qq">6. A generic (non-context) import calls an export. Earlier in the run, a context import in instance <code>top.o</code> was called. On Verilator 5.052:</p>
+<label><input type="radio" value="a"> Fatal "scope wasn't set" error</label>
+<label><input type="radio" value="b"> The export of <code>top.o</code> runs, with no warning</label>
+<label><input type="radio" value="c"> The export of the caller's instance runs, correctly</label>
+<label><input type="radio" value="d"> Compile-time error</label>
+<div class="why">A generic import doesn't touch the scope register, so the stale <code>top.o</code> is used. The fatal error appears only when no scope was ever set (lab <code>noctx</code> vs <code>stale</code>). Verilator can't catch it at compile time because it can't see what C does.</div></div>
+
+<div class="quiz" data-answer="c"><p class="qq">7. What does <code>svSetScope(s)</code> return?</p>
+<label><input type="radio" value="a"> 0 on success, −1 on failure</label>
+<label><input type="radio" value="b"> <code>s</code></label>
+<label><input type="radio" value="c"> The previous scope</label>
+<label><input type="radio" value="d"> <code>void</code></label>
+<div class="why">It returns the previously current scope, so you can restore it: <code>svScope prev = svSetScope(s); … svSetScope(prev);</code>. Lab: <code>now_in=top.b1 prev=top</code>.</div></div>
+
+<div class="quiz" data-answer="a"><p class="qq">8. Which string does Verilator's <code>svGetScopeFromName</code> accept for instance <code>u</code> in generate block <code>gen</code>, iteration 1, under <code>top</code>?</p>
+<label><input type="radio" value="a"> <code>"top.gen[1].u"</code></label>
+<label><input type="radio" value="b"> <code>"TOP.top.gen[1].u"</code></label>
+<label><input type="radio" value="c"> <code>"gen[1].u"</code></label>
+<label><input type="radio" value="d"> <code>"top.gen_1.u"</code></label>
+<div class="why">The name is exactly what <code>%m</code> prints. The internal <code>TOP.</code> prefix and relative names return NULL (lab <code>setscope</code> and <code>ex/broadcast</code>).</div></div>
+
+<div class="quiz" data-answer="d"><p class="qq">9. On the C side, what does Verilator's generated header declare for <code>export "DPI-C" task sv_task;</code> with <code>task sv_task(input int i, output int o)</code>?</p>
+<label><input type="radio" value="a"> <code>int sv_task(int i, int* o)</code>, as Annex H says</label>
+<label><input type="radio" value="b"> <code>int sv_task(int i, int o)</code></label>
+<label><input type="radio" value="c"> <code>void sv_task(int i, int o)</code></label>
+<label><input type="radio" value="d"> <code>void sv_task(int i, int* o)</code></label>
+<div class="why">Outputs are pointers. Annex H gives exported tasks an <code>int</code> return (the disable flag), but Verilator (like VCS per the book's footnote) generates <code>void</code>. Include the header and never use the return.</div></div>
+
+<div class="quiz" data-answer="b"><p class="qq">10. Sample 12.40 (exported <code>mem_write</code> with <code>#10</code>, called from a C context task) on Verilator 5.052 with <code>--timing</code>:</p>
+<label><input type="radio" value="a"> Runs and takes 10 ns per write</label>
+<label><input type="radio" value="b"> Compile error "Unsupported: Timing controls inside DPI-exported tasks"</label>
+<label><input type="radio" value="c"> Runs, but the delays are ignored (zero time)</label>
+<label><input type="radio" value="d"> Runtime crash when C calls the task</label>
+<div class="why">Verilator can't suspend a C frame, so it rejects any timing control reachable from an exported task, including one nested in a called task. The portable fix is the pull model.</div></div>
+
+<div class="quiz" data-answer="c"><p class="qq">11. Why does the pull model need no <code>context</code> at all?</p>
+<label><input type="radio" value="a"> Because it uses tasks instead of functions</label>
+<label><input type="radio" value="b"> Because Verilator infers context automatically</label>
+<label><input type="radio" value="c"> Because C never calls back into SV: it only returns data and receives results as arguments</label>
+<label><input type="radio" value="d"> Because <code>output</code> arguments carry the scope</label>
+<div class="why">Context is needed only to call exports, use VPI or use the scope API. In the pull model all traffic is SV→C calls with arguments and returns, so every import is generic, and cheaper (0.5).</div></div>
+
+<div class="quiz" data-answer="b"><p class="qq">12. C's <code>cmd_next(char* cmd, int* idx, int* addr, int* data)</code> doesn't write <code>*data</code> for an <code>M</code> command. Before the call, SV's <code>data</code> was 7. After it, SV sees:</p>
+<label><input type="radio" value="a"> 7: untouched outputs keep their value</label>
+<label><input type="radio" value="b"> Unspecified, possibly garbage (the lab saw 32711)</label>
+<label><input type="radio" value="c"> 0</label>
+<label><input type="radio" value="d"> X</label>
+<div class="why">Verilator passes outputs through a temporary that C is expected to fill, and an unwritten one copies back whatever it held. Write every output on every path (step 02). There is no X: Verilator is 2-state, and the C side has no idea of X anyway.</div></div>
+
+<div class="quiz" data-answer="a,c"><p class="qq">13. Which of these need <code>context</code>? (select all)</p>
+<label><input type="checkbox" value="a"> A C function that calls <code>svGetScope()</code></label>
+<label><input type="checkbox" value="b"> A C function that opens and writes a log file</label>
+<label><input type="checkbox" value="c"> A C function that calls an exported SV function</label>
+<label><input type="checkbox" value="d"> A C function that keeps a <code>malloc</code>'d table across calls</label>
+<div class="why">The scope API and exports need context. File I/O and persistent heap state are generic: allowed without context, just not pure.</div></div>
+
+<div class="quiz" data-answer="d"><p class="qq">14. Why can't you export a method of an SV class, and what is the book's workaround?</p>
+<label><input type="radio" value="a"> Classes are not synthesizable. Workaround: use structs</label>
+<label><input type="radio" value="b"> Methods are virtual. Workaround: make them static</label>
+<label><input type="radio" value="c"> DPI forbids tasks in classes. Workaround: use functions</label>
+<label><input type="radio" value="d"> No object exists when the C symbol is bound at elaboration. Workaround: export module-level wrappers that take an index into a queue of handles</label>
+<div class="why">A class handle can't cross DPI and the export needs a fixed address at elaboration, so C names objects by integer index and module wrappers do <code>memq[idx].method()</code> (Samples 12.44/12.45, lab <code>mem_oop</code>).</div></div>
+
+<h2 id="s4"><span class="no">§4</span>Lab walkthrough</h2>
+<p><b>Run:</b> <code>cd tutorial/05_export_and_context/lab &amp;&amp; python3 check.py</code>. It builds 24 Verilator binaries in four parallel batches (about 15 s with a warm ccache, 1–2 min cold), runs them, and asserts 38 facts. Logs are in <code>build/&lt;name&gt;.log</code>, build output (including the expected compile errors) in <code>build/&lt;name&gt;.build</code>, and the generated prototypes in <code>build/vl_&lt;name&gt;/Vtop__Dpi.h</code>.</p>
+<p><b>Predict first:</b> before opening the logs, write down (1) which instance prints in <code>scopes</code> and <code>setscope</code>, (2) whether <code>stale</code> crashes, (3) how many C calls <code>pure</code> and <code>comb</code> make, (4) the end time of <code>mem_pull</code>.</p>
+<div class="tbl"><table>
+<thead><tr><th>Experiment</th><th>Files</th><th>What it shows</th><th>Result (Verilator 5.052)</th></tr></thead>
+<tbody>
+<tr><td>scopes</td><td class="mono">scopes.sv/.c</td><td>one C routine, two export copies (12.34, 12.46)</td><td><code>top.b1.sv_display</code>, then <code>top.sv_display</code>; caller lines 9 and 19</td></tr>
+<tr><td>setscope</td><td class="mono">setscope.sv/.c</td><td>save/restore scope (12.48–12.50), lookup by name, user data</td><td>last saved = <code>top.b1</code>; only <code>"top.b2"</code> found; counters 1, 1, 4</td></tr>
+<tr><td>noctx / stale</td><td class="mono">noctx.sv/.c</td><td>export from a generic import</td><td>fatal "scope wasn't set" / silently runs <code>top.o</code>'s export</td></tr>
+<tr><td>xtask</td><td class="mono">xtask.sv/.c</td><td>zero-time exported task from an import task</td><td>works; header: export <code>void</code>, import <code>int</code>; <code>svIsDisabledState()=0</code></td></tr>
+<tr><td>fn2task</td><td class="mono">fn2task.sv/.c</td><td>imported function → exported task (illegal)</td><td>accepted, runs</td></tr>
+<tr><td>xt_delay / xt_at / xt_nested</td><td class="mono">xtime.sv/.c</td><td><code>#5</code>, <code>@(posedge)</code>, nested delay in an export</td><td>all three: compile error, UNSUPPORTED</td></tr>
+<tr><td>pure / comb</td><td class="mono">pure.sv, comb.sv, pure.c</td><td>call counts</td><td>7 = 7 (no elision); 11 calls for 5 changes</td></tr>
+<tr><td>bench</td><td class="mono">bench.sv/.c</td><td>ns per call</td><td>generic ≈ pure ≈ 1.3–2.3; context ≈ 10–23; +export ≈ 18–108 (load-dependent)</td></tr>
+<tr><td>outarg</td><td class="mono">outarg.sv/.c</td><td>unwritten output argument</td><td>garbage (e.g. 32636), not the old 7</td></tr>
+<tr><td>mem_func</td><td class="mono">mem_func.sv/.c, mem.dat</td><td>Samples 12.37–12.39, 12.42</td><td>read 12 → 34, errs=0, t=0</td></tr>
+<tr><td>mem_task</td><td class="mono">mem_task.sv/.c</td><td>Sample 12.40 as printed</td><td>compile error at lines 15 and 18</td></tr>
+<tr><td>mem_oop</td><td class="mono">mem_oop.sv/.c, mem_oop.dat</td><td>Samples 12.43–12.45, index handles</td><td>34 / 88 per object; book's <code>R1 22 44</code> mismatches</td></tr>
+<tr><td>mem_pull</td><td class="mono">mem_pull.sv/.c</td><td>timed memory, pull model</td><td>reads at 50/70/90 ns, end 90 ns, clock kept ticking</td></tr>
+<tr><td>ex: predict, ex12_8, ex12_10, report, broadcast, pull1, sib</td><td class="mono">ex/</td><td>exercise solutions</td><td>see §2; all asserted</td></tr>
+</tbody></table></div>
+<p><b>What to look at:</b> open <code>build/vl_xtask/Vtop__Dpi.h</code> and compare it with Annex H (exported task = <code>int</code>). In <code>build/vl_outarg/Vtop___024root__0.cpp</code>, find the <code>__Vdpiimwrap_</code> wrapper Verilator generates around every import: the temporaries <code>k__Vcvt</code> and <code>o__Vcvt</code> are where conversions, and the output-argument garbage, come from. Then break things on purpose: remove <code>context</code> from <code>scopes.sv</code>, or swap the <code>svSetScope(prev)</code> restore out of <code>setscope.c</code>, and rerun.</p>
+<p>New Verilator behaviors found here are also recorded in <code>tutorial/NOTES.md</code>.</p>
+
+<h2 id="s5"><span class="no">§5</span>Cheat sheet</h2>
+<div class="tbl"><table>
+<thead><tr><th>Construct</th><th>SV declaration</th><th>C side</th><th>Pitfall</th></tr></thead>
+<tbody>
+<tr><td>export function</td><td class="mono">export "DPI-C" function f;</td><td class="mono">include Vtop__Dpi.h; f(...)</td><td>no type/args/() in the export; one copy per instance</td></tr>
+<tr><td>export, renamed</td><td class="mono">export "DPI-C" c_f = function f;</td><td class="mono">c_f(...)</td><td>C name must be unique per scope</td></tr>
+<tr><td>export task</td><td class="mono">export "DPI-C" task t;</td><td class="mono">void t(...) (Verilator)</td><td>LRM: <code>int</code> disable flag; no timing in Verilator</td></tr>
+<tr><td>pure import</td><td class="mono">import "DPI-C" pure function …</td><td>no state, no I/O, no outputs</td><td>call count not guaranteed; never a task</td></tr>
+<tr><td>generic import</td><td class="mono">import "DPI-C" function …</td><td>state, files OK</td><td>must not call exports/VPI/scope API</td></tr>
+<tr><td>context import</td><td class="mono">import "DPI-C" context function|task …</td><td>may call exports</td><td>≈ 6–10× a generic call; forgetting it → NULL or stale scope</td></tr>
+<tr><td>import task</td><td class="mono">import "DPI-C" context task t(…);</td><td class="mono">int t(...) → return 0</td><td>needed to call exported tasks; C never blocks in Verilator</td></tr>
+<tr><td>current scope</td><td>—</td><td class="mono">svScope s = svGetScope();</td><td>only meaningful in a context call</td></tr>
+<tr><td>switch scope</td><td>—</td><td class="mono">svScope p = svSetScope(s); … svSetScope(p);</td><td>restore it</td></tr>
+<tr><td>names</td><td>—</td><td class="mono">svGetNameFromScope(s); svGetScopeFromName("top.u")</td><td>full <code>%m</code> name, no <code>TOP.</code></td></tr>
+<tr><td>caller location</td><td>—</td><td class="mono">svGetCallerInfo(&amp;file, &amp;line);</td><td>path as on the command line</td></tr>
+<tr><td>per-scope data</td><td>—</td><td class="mono">svPutUserData(s, &amp;key, p); svGetUserData(s, &amp;key)</td><td>key = address of a private static; free in <code>final</code></td></tr>
+<tr><td>object from C</td><td>queue of handles + wrappers</td><td class="mono">int idx = build(); op(idx, …)</td><td>class methods can't be exported; wrapper must be <code>automatic</code> if it declares-with-init</td></tr>
+<tr><td>timed C-driven model</td><td>SV loop + timed tasks</td><td class="mono">int next(output …) / void result(…)</td><td>pull, not push: portable everywhere</td></tr>
+</tbody></table></div>
+<h4>Key rules</h4>
+<ol>
+<li>pure ⊂ generic ⊂ context: declare the innermost true one.</li>
+<li>Calls exports, VPI or the scope API → <code>context</code>, always.</li>
+<li>The number of C calls is not SV semantics, so keep stateful C out of <code>assign</code>/<code>always_comb</code>.</li>
+<li>Always include the generated <code>Vtop__Dpi.h</code>.</li>
+<li>Per-instance state lives on the scope or behind a chandle, never in one global <code>svScope</code>.</li>
+<li>Restore the scope after <code>svSetScope</code>.</li>
+<li>C never waits: invert to a pull model.</li>
+<li>Exported tasks are called only from <code>context task</code> imports, and contain no timing in Verilator.</li>
+<li>Write every <code>output</code> argument on every path.</li>
+<li>Class handles never cross DPI: pass an index.</li>
+</ol>
+
+<p class="foot">Spear &amp; Tumbush, <i>SystemVerilog for Verification</i>, 3rd ed. (Springer, 2012), §12.7–12.8, Samples 12.32–12.50; IEEE Std 1800-2023 clause 35 and Annexes H, I. Lab: Verilator 5.052 on macOS x86_64. Every result in this guide is asserted by <code>lab/check.py</code>.</p>
+</main>
+</div>
+</body>
+</html>
