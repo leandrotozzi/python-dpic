@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"   # step 07 uses PEP 741 (new in 3.14)
-      - run: pip install numpy
+      - run: pip install numpy && brew install z3   # z3: solver behind randomize() (step 06)
       - id: vcache
         uses: actions/cache@v4
         with:

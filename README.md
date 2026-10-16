@@ -13,7 +13,7 @@ references all live there. Offline, open [`tutorial/index.html`](tutorial/index.
 
 ## Quick start
 
-Needs Verilator 5.x, a C/C++ compiler and Python 3 (numpy for step 08).
+Needs Verilator 5.x, a C/C++ compiler, Python 3.14, z3 (step 06) and numpy (step 08).
 
 ```sh
 git clone https://github.com/leandrotozzi/python-dpic.git
